@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pettagam"
+version = "0.1.0"
+description = "Organize a messy file tree into a smart, type-based library"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.optional-dependencies]
+fast = ["xxhash>=3"]
+dev = ["pytest>=7"]
+
+[project.scripts]
+pettagam = "pettagam.cli:main"
+
+[tool.setuptools]
+packages = ["pettagam"]
