@@ -131,8 +131,24 @@ def _steps(action: str, s: dict):
         from .tag import tag_library
         return tag_library(connect(s["db"]), s["library"], workers=int(s["workers"]) * 2, progress=say)
 
-    return {"dryrun": dryrun, "apply": do_apply, "verify": do_verify, "inbox": do_inbox,
-            "views": do_views, "tag": do_tag}[action]
+    def do_undo(say):
+        from .maintenance import undo
+        return undo(connect(s["db"]), progress=say)
+
+    steps = {"dryrun": dryrun, "apply": do_apply, "verify": do_verify, "inbox": do_inbox,
+             "views": do_views, "tag": do_tag, "undo": do_undo}
+
+    def with_backup(say):
+        result = steps[action](say)
+        if action in ("apply", "inbox", "tag", "undo"):
+            from .maintenance import backup_catalog
+            try:
+                backup_catalog(connect(s["db"]))
+            except Exception as e:  # a missing copy must not turn a good result into an error
+                say(f"Note: could not save the catalog copy in the library: {e}")
+        return result
+
+    return with_backup
 
 
 EXPLORE_SQL = """
@@ -345,6 +361,14 @@ class Handler(BaseHTTPRequestHandler):
                                            q.get("year", ""), int(q.get("offset", "0") or 0)))
         if u.path == "/api/facets":
             return self._send(200, facets(s))
+        if u.path == "/api/doctor":
+            from .doctor import run_checks
+            con = connect(s["db"]) if os.path.exists(s["db"]) else None
+            return self._send(200, run_checks(con, s["source"] or None, s["library"] or None,
+                                              s.get("inbox") or None, s["db"]))
+        if u.path == "/api/service":
+            from . import service
+            return self._send(200, {**service.status(), "log": service.last_log()})
         if u.path == "/api/estimate":
             from .tag import estimate
             if not os.path.exists(s["db"]):
@@ -380,9 +404,21 @@ class Handler(BaseHTTPRequestHandler):
                     s[k] = body[k]
             save_settings(s)
             return self._send(200, {"settings": s})
+        if u.path == "/api/service":
+            from . import service
+            try:
+                if body.get("on"):
+                    if not (os.path.isdir(s.get("inbox") or "") and s["library"]):
+                        return self._send(400, {"error": "Choose the inbox and library folders first."})
+                    service.install(s["db"], s["inbox"], s["library"], every=int(body.get("every") or 300))
+                else:
+                    service.uninstall()
+            except SystemExit as e:
+                return self._send(400, {"error": str(e)})
+            return self._send(200, service.status())
         if u.path == "/api/run":
             action = body.get("action")
-            if action not in ("dryrun", "apply", "verify", "inbox", "views", "tag"):
+            if action not in ("dryrun", "apply", "verify", "inbox", "views", "tag", "undo"):
                 return self._send(400, {"error": "unknown action"})
             if action == "inbox" and not os.path.isdir(s.get("inbox") or ""):
                 return self._send(400, {"error": "Choose the inbox folder first."})
@@ -390,7 +426,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(400, {"error": "Choose the library folder first."})
             if action == "dryrun" and not (os.path.isdir(s["source"]) and s["library"]):
                 return self._send(400, {"error": "Choose the old-files folder and the library folder first."})
-            if action in ("apply", "verify", "views", "tag") and not summary(s).get("planned"):
+            if action in ("apply", "verify", "views", "tag", "undo") and not summary(s).get("planned"):
                 return self._send(400, {"error": "Run the dry run first."})
             if not JOB.start(action, _steps(action, s)):
                 return self._send(409, {"error": "Another step is still running."})

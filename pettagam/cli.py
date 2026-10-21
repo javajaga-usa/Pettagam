@@ -10,13 +10,19 @@
   pettagam inbox INBOX [--watch N]  file new files from an inbox folder into the library
   pettagam views [--init]           rebuild the automatic views (by year, by camera, ...) as hardlinks
   pettagam tag                      add AI tags and descriptions to photos and documents (optional, paid)
+  pettagam doctor                   check drives, hardlinks, free space and setup
+  pettagam service on|off|status    sort the inbox automatically in the background
+  pettagam undo                     take placed files back out of the library (old files untouched)
+  pettagam relocate                 follow the files after the drive is mounted somewhere else
 """
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import sqlite3
 import sys
+import time
 
 from . import __version__
 from .apply import apply
@@ -95,17 +101,50 @@ def main(argv=None) -> int:
     tg.add_argument("--workers", type=int, default=4)
     tg.add_argument("--yes", action="store_true", help="do not ask for confirmation")
 
+    dc = sub.add_parser("doctor", help="check drives, hardlinks, free space and setup")
+    dc.add_argument("--source")
+    dc.add_argument("--library")
+    dc.add_argument("--inbox")
+
+    sv = sub.add_parser("service", help="sort the inbox automatically in the background (macOS, Linux)")
+    sv.add_argument("action", choices=["on", "off", "status"])
+    sv.add_argument("--inbox", help="the inbox folder (needed for 'on')")
+    sv.add_argument("--library", help="default: the library from the last dry run")
+    sv.add_argument("--every", type=int, default=300, help="also check every N seconds (default 300)")
+
+    un = sub.add_parser("undo", help="take placed files back out of the library; the old files are untouched")
+    un.add_argument("--dry-run", action="store_true", help="only show what would be removed")
+    un.add_argument("--yes", action="store_true", help="do not ask for confirmation")
+
+    rl = sub.add_parser("relocate", help="point the catalog at the drive's new location (e.g. after moving to Ubuntu)")
+    rl.add_argument("--source", help="where the old files are now")
+    rl.add_argument("--library", help="where the library is now")
+    rl.add_argument("--catalog-from", help="start from the catalog copy in <library>/_meta/catalog.db")
+
     args = p.parse_args(argv)
+    if args.cmd == "relocate":
+        from .maintenance import relocate
+        if not (args.source or args.library or args.catalog_from):
+            raise SystemExit("Give --source, --library and/or --catalog-from.")
+        relocate(args.db, args.source, args.library, args.catalog_from)
+        return 0
     if args.cmd == "panel":
         from .panel import serve
         serve(args.host, args.port, open_browser=not args.no_browser)
         return 0
     con = connect(args.db)
     try:
-        return _run(con, args)
+        code = _run(con, args)
     except RuleError as e:
         print(f"Problem in your rules: {e}", file=sys.stderr)
         return 3
+    if args.cmd in ("apply", "inbox", "tag", "undo") and not getattr(args, "dry_run", False):
+        from .maintenance import backup_catalog
+        try:
+            backup_catalog(con)
+        except (OSError, sqlite3.Error) as e:
+            print(f"Note: could not save the catalog copy in the library: {e}", file=sys.stderr)
+    return code
 
 
 def _library(con, args) -> str:
@@ -174,6 +213,8 @@ def _run(con, args) -> int:
         if args.watch:
             watch(con, args.inbox, lib, path, every=args.watch, settle=args.settle, load=load_rules)
             return 0
+        if not sys.stdout.isatty():
+            print(time.strftime("%Y-%m-%d %H:%M:%S") + " sorting the inbox")
         res = sort_inbox(con, args.inbox, lib, load_rules(path), settle=args.settle, dry_run=args.dry_run)
         return 1 if res["error"] else 0
     if args.cmd == "views":
@@ -200,6 +241,43 @@ def _run(con, args) -> int:
         res = tag_library(con, _library(con, args), workers=args.workers, limit=args.limit,
                           retag=args.retag, only=args.only, model=model)
         return 1 if res["errors"] else 0
+    if args.cmd == "doctor":
+        from .doctor import print_checks, run_checks
+        svc = None
+        try:
+            from .service import status
+            svc = status().get("inbox")
+        except Exception:
+            pass
+        return print_checks(run_checks(con, args.source, args.library, args.inbox or svc, args.db))
+    if args.cmd == "service":
+        from . import service
+        if args.action == "status":
+            print(service.status()["text"])
+            log = service.last_log()
+            if log:
+                print("Last lines of the log:\n" + log)
+            return 0
+        if args.action == "off":
+            print("Automatic inbox sorting stopped." if service.uninstall() else "It was not on.")
+            return 0
+        if not args.inbox:
+            raise SystemExit("Say which folder is the inbox: pettagam service on --inbox FOLDER")
+        st = service.install(args.db, args.inbox, _library(con, args), every=args.every)
+        print(service.status()["text"] + ("" if st["started"] else
+              " (written, but it could not be started now; it starts at your next login)"))
+        print(f"Log: {st['log']}")
+        return 0
+    if args.cmd == "undo":
+        from .maintenance import undo
+        if not args.dry_run and not args.yes:
+            preview = undo(con, dry_run=True, progress=lambda m: None)
+            if input(f"Remove {preview['removed']:,} files from the library and return {preview['returned']:,} to "
+                     "the inbox? The old files are not touched. [y/N] ").lower() != "y":
+                print("Cancelled.")
+                return 1
+        undo(con, dry_run=args.dry_run)
+        return 0
     return 0
 
 

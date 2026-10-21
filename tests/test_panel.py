@@ -137,3 +137,32 @@ def test_explore_inbox_and_files(server):
     call(base, "/api/run", {"action": "views"})
     assert wait_job(base)["job"]["result"]["Recent"] == 3
     assert call(base, "/api/estimate")["files"] == 3
+
+
+def test_doctor_service_and_undo_from_panel(server, monkeypatch):
+    from pettagam import service
+    base, tmp = server
+    monkeypatch.setenv("HOME", str(tmp / "home"))
+    calls = []
+    monkeypatch.setattr(service, "RUNNER", lambda args, **kw: calls.append(args) or type("R", (), {"returncode": 0})())
+    src, inbox = tmp / "old", tmp / "inbox"
+    inbox.mkdir()
+    write(str(src), "docs/Invoice_1.pdf", b"%PDF-1.7 hello")
+    call(base, "/api/settings", {"source": str(src), "library": str(tmp / "lib"), "inbox": str(inbox)})
+    names = {c["name"]: c["status"] for c in call(base, "/api/doctor")}
+    assert names["Old files"] == "ok" and "Placement" in names
+
+    st = call(base, "/api/service", {"on": True, "every": 600})
+    assert st["installed"] and st["every"] == 600 and calls
+    assert call(base, "/api/service")["installed"]
+    assert not call(base, "/api/service", {"on": False})["installed"]
+
+    call(base, "/api/run", {"action": "dryrun"})
+    wait_job(base)
+    call(base, "/api/run", {"action": "apply"})
+    wait_job(base)
+    assert (tmp / "lib" / "_meta" / "catalog.db").exists()
+    call(base, "/api/run", {"action": "undo"})
+    st = wait_job(base)
+    assert st["job"]["result"]["removed"] == 1 and st["summary"]["placed"] == 0
+    assert (src / "docs" / "Invoice_1.pdf").exists()
