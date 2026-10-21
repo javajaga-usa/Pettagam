@@ -23,6 +23,12 @@ After the one-time cleanup it keeps the library tidy:
 
 ## Install
 
+**On the Mac (no typing):** double-click **`Setup Pettagam.command`** in this folder. It finds Python, offers to set up AI tagging, and puts a **Pettagam** app in your Applications folder, built on your Mac so macOS doesn't block it. From then on, open Pettagam from Launchpad or Spotlight. (If macOS refuses to open the setup file itself the first time, open **System Settings → Privacy & Security** and press **Open Anyway** next to it.)
+
+**On Ubuntu:** run `./launchers/setup-ubuntu.sh` (add `--ai` for AI tagging). It adds a `pettagam` command, and a menu entry on a desktop.
+
+**Or with pip, anywhere:**
+
 ```
 cd pettagam
 python3 -m pip install --user .
@@ -30,21 +36,23 @@ python3 -m pip install --user .
 
 You now have a `pettagam` command. If your shell can't find it, run `python3 -m pettagam` from this folder instead.
 
-## Easy launcher (no typing)
+To remove Pettagam, double-click **`Uninstall Pettagam.command`** (it also works on Linux: `bash "Uninstall Pettagam.command"`). It removes the app, the background inbox job and the AI-tagging libraries, and asks before removing your settings and catalog. Your old files, the library and the inbox are never touched.
 
-**On the Mac:** in Finder, open the `launchers` folder and double-click **`Pettagam.command`**. The first time, macOS may block it; if so, right-click it and choose **Open**. Your browser opens the Pettagam panel, where you:
+## The panel
+
+Open the Pettagam app (or run `pettagam panel`, or double-click `launchers/Pettagam.command`). Your browser opens the panel. The **Organize** tab walks you through:
 
 1. **Choose folders.** Pick the folder with your old files, then the place for the new library.
-2. **Start dry run.** This scans and plans without changing anything. You see a count for every folder, can search any file to see where it will go and why, and can open the full report.
-3. **Place files**, then **Check everything is in sync.**
+2. **Health check.** Shows at a glance whether the drive is reachable, whether placing can use hardlinks (instant, no extra space), and whether there's enough free space.
+3. **Start dry run.** This scans and plans without changing anything. You see a count for every folder, can search any file to see where it will go and why, and can open the full report.
+4. **Place files**, then **Check everything is in sync.** **Undo placement…** takes it all back out again if you change your mind.
+5. **Keep it tidy:** choose an inbox folder and press **Sort the inbox now**, or tick **Sort the inbox automatically in the background**. **Rebuild views** and **Add AI tags…** are here too (tagging shows the number of files and a rough cost first).
+
+The **Explore library** tab shows every file in the library, newest first, with thumbnails. Search by any word in the name, folder, tags or description, filter by kind and year, or click a tag. Click a file to see a preview, where it came from, its date and tags, and to open it.
 
 The panel remembers your folders, shows live progress, and keeps its catalog in `~/.pettagam/` on your internal drive. To stop it, close the Terminal window that opened with it.
 
 **On Ubuntu Server (no screen):** run `launchers/pettagam-panel.sh --host 0.0.0.0 --no-browser`, then open the link it prints from any computer on your network. In this mode the link carries a secret token, so only people with the link can use the panel.
-
-You can also start it with `pettagam panel`.
-
-The panel has two tabs. **Organize** holds the steps above plus **4. Keep it tidy**: choose an inbox folder and press **Sort the inbox now**, **Rebuild views**, or **Add AI tags…** (it shows the number of files and a rough cost first). **Explore library** shows every file in the library, newest first, with thumbnails. Search by any word in the name, folder, tags or description, filter by kind and year, or click a tag. Click a file to see a preview, where it came from, its date and tags, and to open it.
 
 ## Use it from the command line
 
@@ -179,9 +187,44 @@ pettagam --db ~/pettagam.db tag
 
 It shows how many files will be sent and a rough cost, and asks before starting. Only files without tags are sent, so you can stop and resume; tags are kept when you run a new dry run. The default model is `claude-opus-5-5` (about $0.01 per photo); `--model claude-haiku-5-5` is much cheaper. HEIC and RAW photos are previewed with macOS's built-in `sips`; on Ubuntu they are skipped. Use `--only images/photos` to tag one folder.
 
+## Health check
+
+```
+pettagam --db ~/pettagam.db doctor
+```
+
+Checks Python, that the old files and library are reachable, whether placing will use hardlinks (same drive, and a drive format that supports them; exFAT doesn't), free space against what copying needs, where the catalog is, and whether the background inbox and AI tagging are set up. Each problem comes with what to do about it. The same list is in the panel.
+
+## Sorting the inbox automatically
+
+```
+pettagam --db ~/pettagam.db service on --inbox "/Volumes/N300/Inbox"
+pettagam --db ~/pettagam.db service status
+pettagam --db ~/pettagam.db service off
+```
+
+This sorts the inbox in the background, even with the panel closed and after a restart: as soon as something lands in the inbox, and every 5 minutes (`--every SECONDS`) to pick up files that were still being copied. On a Mac it's a LaunchAgent (`~/Library/LaunchAgents/local.pettagam.inbox.plist`); on Ubuntu, a systemd user timer and path watch (`~/.config/systemd/user/pettagam-inbox.*`). What it does is logged in `~/.pettagam/inbox-service.log`. The first time it reaches an external drive, macOS may ask whether Python may access files on a removable volume: allow it. On an Ubuntu server, run `loginctl enable-linger` once so it keeps running when you're logged out.
+
+## Undo
+
+```
+pettagam --db ~/pettagam.db undo --dry-run   # see what would happen
+pettagam --db ~/pettagam.db undo
+```
+
+Takes the placed files back out of the library and moves files that came from the inbox back into the inbox, so you can change your rules and place again. A library file is only removed when its old file is still there with the same content (for hardlinks, the very same file), so undo never removes the only copy of anything; files it keeps are listed. Views are removed too; your rules and `_meta` stay.
+
 ## Moving to Ubuntu later
 
-Install Pettagam on Ubuntu the same way and plug in the drive. Because the paths change (`/srv/ninaivu/...` instead of `/Volumes/...`), start with a fresh `dryrun` against the new mount point, then `apply`. Files that are already placed are recognised (same inode) and left alone, so nothing is copied twice.
+Pettagam keeps a copy of its catalog with the library (`<library>/_meta/catalog.db`, refreshed after every placement, inbox pass and tagging run), so the catalog travels with the drive. On Ubuntu, set Pettagam up (see [Install](#install)), plug in the drive, and point a new catalog at the new mount points:
+
+```
+pettagam --db ~/pettagam.db relocate --catalog-from /srv/ninaivu/Pettagam/_meta/catalog.db \
+    --source "/srv/ninaivu/Old files" --library /srv/ninaivu/Pettagam
+pettagam --db ~/pettagam.db verify --rescan
+```
+
+The paths inside the catalog are relative, so nothing else changes: tags, rules, the inbox history and the views all carry over. `relocate` spot-checks that files are where it now expects them. Then set up the background inbox again with `pettagam service on`.
 
 ## Development
 
@@ -189,3 +232,5 @@ Install Pettagam on Ubuntu the same way and plug in the drive. Because the paths
 python3 -m pip install pytest
 python3 -m pytest
 ```
+
+CI runs the tests on macOS and Ubuntu with Python 3.9 and 3.12 for every pull request. Changes are listed in [CHANGELOG.md](CHANGELOG.md). To release, update the version in `pyproject.toml` and `pettagam/__init__.py`, add a CHANGELOG section, and push a tag such as `v0.3.0`: the release workflow tests it, builds the package, and publishes a GitHub release with that CHANGELOG section as its notes.
