@@ -56,12 +56,14 @@ The panel remembers your folders, shows live progress, and keeps its catalog in 
 
 ## Use it from the command line
 
-Replace the paths with yours. On the Mac, the N300 Pro appears under `/Volumes/`. Keep the catalog (`--db`) and the report on the Mac's internal SSD, and put the library on the **same drive** as the old files so hardlinks can be used.
+Replace the paths with yours. On the Mac, the N300 Pro appears under `/Volumes/`. Put the library on the **same drive** as the old files so hardlinks can be used.
+
+The command line and the panel share one catalog, `~/.pettagam/pettagam.db`, on the computer's internal SSD. To use another one, set `PETTAGAM_DB` or pass `--db FILE`. A `pettagam.db` in the current folder is used if there is one, as in earlier versions.
 
 **1. Dry run (changes nothing):**
 
 ```
-pettagam --db ~/pettagam.db dryrun "/Volumes/N300/Old files" \
+pettagam dryrun "/Volumes/N300/Old files" \
     --library "/Volumes/N300/Pettagam" --out ~/pettagam-report
 ```
 
@@ -70,7 +72,7 @@ pettagam --db ~/pettagam.db dryrun "/Volumes/N300/Old files" \
 **3. Place the files:**
 
 ```
-pettagam --db ~/pettagam.db apply --workers 2
+pettagam apply --workers 2
 ```
 
 You can stop it and run it again at any time: finished files are skipped. It never overwrites a file that's already in the library.
@@ -78,7 +80,7 @@ You can stop it and run it again at any time: finished files are skipped. It nev
 **4. Check everything is in sync:**
 
 ```
-pettagam --db ~/pettagam.db verify --rescan
+pettagam verify --rescan
 ```
 
 This confirms three things:
@@ -111,8 +113,8 @@ The built-in smart types are in `pettagam/classify.py`. To change where files go
 Rules live in `<library>/_meta/rules.json`. Create a starter file with examples (all switched off) and then check what your rules match:
 
 ```
-pettagam --db ~/pettagam.db rules --library "/Volumes/N300/Pettagam" --init
-pettagam --db ~/pettagam.db rules
+pettagam rules --library "/Volumes/N300/Pettagam" --init
+pettagam rules
 ```
 
 Open the file in TextEdit, change an example and delete its `"off": true` line to switch it on. A rule has a name, conditions (`if`) and a folder (`then`):
@@ -151,9 +153,9 @@ Rules apply to every dry run (the report lists how many files each rule took) an
 Make a folder such as `/Volumes/N300/Inbox` and drop new files into it (or point your phone backup or downloads there). Then:
 
 ```
-pettagam --db ~/pettagam.db inbox "/Volumes/N300/Inbox" --dry-run   # only show where files would go
-pettagam --db ~/pettagam.db inbox "/Volumes/N300/Inbox"             # file them
-pettagam --db ~/pettagam.db inbox "/Volumes/N300/Inbox" --watch 60  # keep running, checking every minute
+pettagam inbox "/Volumes/N300/Inbox" --dry-run   # only show where files would go
+pettagam inbox "/Volumes/N300/Inbox"             # file them
+pettagam inbox "/Volumes/N300/Inbox" --watch 60  # keep running, checking every minute
 ```
 
 - Unlike the old-files folder, **the inbox is emptied**: each file is moved into the library (instantly on the same drive; across drives it is copied, checked, and only then removed from the inbox).
@@ -165,7 +167,7 @@ pettagam --db ~/pettagam.db inbox "/Volumes/N300/Inbox" --watch 60  # keep runni
 ## Automatic views
 
 ```
-pettagam --db ~/pettagam.db views
+pettagam views
 ```
 
 This builds `<library>/views/` with `by-year/<year>/<month>/` (photos and videos), `by-camera/<camera>/`, `recent/` (last 30 days), `large-files/` (over 500 MB) and `by-tag/<tag>/`. Each entry is a hardlink to the file in the library, so views use no extra space, and deleting from a view never deletes the library file. Run it again after placing files, sorting the inbox or tagging; it removes the entries it made before and leaves anything else alone. (On a drive without hardlinks, such as exFAT, the entries are shortcuts instead.)
@@ -181,26 +183,48 @@ Optional. Claude looks at each photo, PDF and text file in the library and gives
 3. Try a few first, then the rest:
 
 ```
-pettagam --db ~/pettagam.db tag --limit 20
-pettagam --db ~/pettagam.db tag
+pettagam tag --limit 20
+pettagam tag
 ```
 
 It shows how many files will be sent and a rough cost, and asks before starting. Only files without tags are sent, so you can stop and resume; tags are kept when you run a new dry run. The default model is `claude-opus-5-5` (about $0.01 per photo); `--model claude-haiku-5-5` is much cheaper. HEIC and RAW photos are previewed with macOS's built-in `sips`; on Ubuntu they are skipped. Use `--only images/photos` to tag one folder.
 
+## Find, stats and duplicates
+
+```
+pettagam find beach 2019                 # words in the name, folder, tags, description or camera
+pettagam find --tag receipt --year 2024  # also --type images|documents|...; --json for scripts
+pettagam stats                           # files by type, by year, cameras, top tags, space saved
+pettagam duplicates --csv dupes.csv      # sets of identical old files, biggest waste first
+```
+
+`find` prints full paths, so `pettagam find --tag invoice | head` works with other tools. `duplicates` only lists files. Nothing is deleted, and only one copy of each set went into the library. The Explore tab in the panel shows the same summary as `stats`.
+
 ## Health check
 
 ```
-pettagam --db ~/pettagam.db doctor
+pettagam doctor
 ```
 
 Checks Python, that the old files and library are reachable, whether placing will use hardlinks (same drive, and a drive format that supports them; exFAT doesn't), free space against what copying needs, where the catalog is, and whether the background inbox and AI tagging are set up. Each problem comes with what to do about it. The same list is in the panel.
 
+## Damage check
+
+A drive that holds files for years can damage them silently (bit rot). The first check records a fingerprint of every library file. Later checks read each file again and compare it with that fingerprint:
+
+```
+pettagam fixity                 # the whole library
+pettagam fixity --minutes 60    # an hour at a time; the next run carries on where this one stopped
+```
+
+A file you edited is noted and its fingerprint is updated. A file whose content changed while its size and date did not is reported as **damaged**, and it stays flagged until it is restored. That is a sign the drive may be failing. The health check shows when the library was last checked, and the panel has a **Check for damage** button.
+
 ## Sorting the inbox automatically
 
 ```
-pettagam --db ~/pettagam.db service on --inbox "/Volumes/N300/Inbox"
-pettagam --db ~/pettagam.db service status
-pettagam --db ~/pettagam.db service off
+pettagam service on --inbox "/Volumes/N300/Inbox"
+pettagam service status
+pettagam service off
 ```
 
 This sorts the inbox in the background, even with the panel closed and after a restart: as soon as something lands in the inbox, and every 5 minutes (`--every SECONDS`) to pick up files that were still being copied. On a Mac it's a LaunchAgent (`~/Library/LaunchAgents/local.pettagam.inbox.plist`); on Ubuntu, a systemd user timer and path watch (`~/.config/systemd/user/pettagam-inbox.*`). What it does is logged in `~/.pettagam/inbox-service.log`. The first time it reaches an external drive, macOS may ask whether Python may access files on a removable volume: allow it. On an Ubuntu server, run `loginctl enable-linger` once so it keeps running when you're logged out.
@@ -208,8 +232,8 @@ This sorts the inbox in the background, even with the panel closed and after a r
 ## Undo
 
 ```
-pettagam --db ~/pettagam.db undo --dry-run   # see what would happen
-pettagam --db ~/pettagam.db undo
+pettagam undo --dry-run   # see what would happen
+pettagam undo
 ```
 
 Takes the placed files back out of the library and moves files that came from the inbox back into the inbox, so you can change your rules and place again. A library file is only removed when its old file is still there with the same content (for hardlinks, the very same file), so undo never removes the only copy of anything; files it keeps are listed. Views are removed too; your rules and `_meta` stay.
@@ -219,9 +243,9 @@ Takes the placed files back out of the library and moves files that came from th
 Pettagam keeps a copy of its catalog with the library (`<library>/_meta/catalog.db`, refreshed after every placement, inbox pass and tagging run), so the catalog travels with the drive. On Ubuntu, set Pettagam up (see [Install](#install)), plug in the drive, and point a new catalog at the new mount points:
 
 ```
-pettagam --db ~/pettagam.db relocate --catalog-from /srv/ninaivu/Pettagam/_meta/catalog.db \
+pettagam relocate --catalog-from /srv/ninaivu/Pettagam/_meta/catalog.db \
     --source "/srv/ninaivu/Old files" --library /srv/ninaivu/Pettagam
-pettagam --db ~/pettagam.db verify --rescan
+pettagam verify --rescan
 ```
 
 The paths inside the catalog are relative, so nothing else changes: tags, rules, the inbox history and the views all carry over. `relocate` spot-checks that files are where it now expects them. Then set up the background inbox again with `pettagam service on`.

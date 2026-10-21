@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import time
 import shutil
 import sys
 import tempfile
@@ -130,6 +131,26 @@ def run_checks(con=None, source: str = None, library: str = None, inbox: str = N
                    _check("ok", "Automatic inbox", "Off. The inbox is sorted when you ask."))
     except Exception:  # never let the health check itself fail
         pass
+
+    if con is not None and library:
+        try:
+            from .fixity import summary as fixity_summary
+            fx = fixity_summary(con)
+            if fx["damaged"]:
+                out.append(_check("fail", "Damage check", f"{fx['damaged']:,} library files changed without being edited.",
+                                  "The drive may be failing: run `pettagam fixity` to list them, restore them and "
+                                  "copy the library to another drive."))
+            elif fx["last"]:
+                days = int((time.time() - fx["last"]) // 86400)
+                out.append(_check("ok" if days <= 90 else "warn", "Damage check",
+                                  f"{fx['fingerprinted']:,} files fingerprinted; last checked "
+                                  f"{'today' if days == 0 else f'{days} days ago'}.",
+                                  "" if days <= 90 else "Run `pettagam fixity --minutes 60` now and then."))
+            else:
+                out.append(_check("ok", "Damage check", "Not run yet.",
+                                  "Optional: `pettagam fixity` fingerprints the library so damage can be found later."))
+        except Exception:
+            pass
 
     has_sdk = importlib.util.find_spec("anthropic") is not None
     has_key = bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")

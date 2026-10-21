@@ -173,6 +173,7 @@ dl.info dt { color: var(--muted); } dl.info dd { margin: 0; word-break: break-al
       <button class="primary" id="btn-inbox">Sort the inbox now</button>
       <button id="btn-views">Rebuild views</button>
       <button id="btn-tag">Add AI tags…</button>
+      <button id="btn-fixity" title="Reads every library file and compares it with its fingerprint">Check for damage</button>
     </div>
     <label class="switch"><input type="checkbox" id="svc"> Sort the inbox automatically in the background, even when this panel is closed</label>
     <p class="hint" id="svc-status" style="margin:4px 0 0"></p>
@@ -188,6 +189,7 @@ dl.info dt { color: var(--muted); } dl.info dd { margin: 0; word-break: break-al
 
 <main id="tab-explore" hidden>
   <section class="card">
+    <p class="hint" id="ex-stats" style="margin-top:0"></p>
     <div class="tools">
       <input id="ex-q" placeholder="Search names, folders, tags and descriptions, for example beach 2019">
       <select id="ex-cat"><option value="">All kinds</option></select>
@@ -242,12 +244,13 @@ function render() {
   setPath("source", settings.source);
   setPath("library", settings.library);
   const busy = job.running;
-  $("status").textContent = busy ? `Running: ${({ dryrun: "dry run", apply: "placing files", verify: "sync check", inbox: "sorting the inbox", views: "building views", tag: "AI tagging" })[job.name]}…` : "Ready";
+  $("status").textContent = busy ? `Running: ${({ dryrun: "dry run", apply: "placing files", verify: "sync check", inbox: "sorting the inbox", views: "building views", tag: "AI tagging", undo: "undo", fixity: "damage check" })[job.name]}…` : "Ready";
   setPath("inbox", settings.inbox);
   $("btn-inbox").disabled = busy || !settings.inbox || !settings.library;
   $("btn-views").disabled = busy || !summary.planned;
   $("btn-tag").disabled = busy || !summary.planned;
   $("btn-undo").disabled = busy || !summary.placed;
+  $("btn-fixity").disabled = busy || !summary.placed;
   $("svc").disabled = !settings.inbox || !settings.library;
   $("btn-dryrun").disabled = busy || !settings.source || !settings.library;
   $("btn-apply").disabled = busy || !summary.planned;
@@ -309,6 +312,13 @@ function showResult(job) {
     el.classList.add(r.kept ? "warn" : "ok");
     el.textContent = `Removed ${fmtN(r.removed)} files from the library and returned ${fmtN(r.returned)} to the inbox.` +
       (r.kept ? ` Kept ${fmtN(r.kept)} that were not safe to remove (see the log).` : "") + " The old files were not touched.";
+  } else if (job.name === "fixity") {
+    const bad = r.damaged.length;
+    el.classList.add(bad ? "bad" : (r.missing.length ? "warn" : "ok"));
+    el.textContent = bad ? `${fmtN(bad)} files changed without being edited: the drive may be failing. Restore them and copy the library to another drive (see the log).`
+      : `No damage found. ${fmtN(r.recorded)} files fingerprinted for the first time, ${fmtN(r.ok)} unchanged` +
+        (r.missing.length ? `, ${fmtN(r.missing.length)} missing (see the log)` : "") + (r.remaining ? `; ${fmtN(r.remaining)} left for next time.` : ".");
+    loadDoctor();
   } else if (job.name === "dryrun") {
     el.classList.add("ok");
     el.textContent = "Dry run finished. Review the folders above, then place the files.";
@@ -337,6 +347,7 @@ $("btn-dryrun").onclick = () => run("dryrun");
 $("btn-apply").onclick = () => run("apply");
 $("btn-verify").onclick = () => run("verify");
 $("btn-inbox").onclick = () => run("inbox");
+$("btn-fixity").onclick = () => run("fixity");
 $("btn-undo").onclick = () => {
   if (confirm("Take the placed files back out of the library? Files sorted from the inbox go back to the inbox. A library file is only removed when its old file still has the same content, so nothing is lost.")) run("undo");
 };
@@ -443,10 +454,22 @@ function showTab(name) {
   document.querySelectorAll("[data-tab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
   $("tab-organize").hidden = name !== "organize";
   $("tab-explore").hidden = name !== "explore";
-  if (name === "explore") { loadFacets(); loadExplore(true); }
+  if (name === "explore") { loadFacets(); loadExplore(true); loadStats(); }
   try { localStorage.setItem("pettagam-tab", name); } catch (e) {}
 }
 document.querySelectorAll("[data-tab]").forEach((b) => b.onclick = () => showTab(b.dataset.tab));
+
+async function loadStats() {
+  try {
+    const st = await api("/api/stats");
+    if (!st.files) { $("ex-stats").textContent = ""; return; }
+    const types = st.by_type.slice(0, 5).map((t) => `${fmtN(t.files)} ${esc(t.category)}`).join(", ");
+    const span = st.by_year.filter((y) => y.year);
+    const years = span.length ? ` from ${esc(span[0].year)} to ${esc(span[span.length - 1].year)}` : "";
+    const dup = st.duplicates.files ? ` ${fmtN(st.duplicates.files)} duplicate copies (${fmtB(st.duplicates.bytes)}) were kept out.` : "";
+    $("ex-stats").innerHTML = `<b>${fmtN(st.files)} files, ${fmtB(st.bytes)}</b>${years}: ${types}.${dup}`;
+  } catch (e) { $("ex-stats").textContent = ""; }
+}
 
 async function loadFacets() {
   if (facetsLoaded) return;

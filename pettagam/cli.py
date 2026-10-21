@@ -14,6 +14,13 @@
   pettagam service on|off|status    sort the inbox automatically in the background
   pettagam undo                     take placed files back out of the library (old files untouched)
   pettagam relocate                 follow the files after the drive is mounted somewhere else
+  pettagam find WORDS [--tag T]     search the library by name, folder, tags, camera, type or year
+  pettagam stats                    what is in the library: by type, year, camera and tag
+  pettagam duplicates [--csv F]     list the identical copies found in the old files
+  pettagam fixity [--minutes N]     check the library for silent damage (bit rot)
+
+The catalog is $PETTAGAM_DB if set, else ./pettagam.db if it exists, else the panel's
+catalog in ~/.pettagam/pettagam.db, so the panel and the command line share one catalog.
 """
 from __future__ import annotations
 
@@ -35,10 +42,20 @@ from .scan import scan
 from .verify import verify
 
 
+def default_db() -> str:
+    env = os.environ.get("PETTAGAM_DB")
+    if env:
+        return env
+    if os.path.exists("pettagam.db"):
+        return "pettagam.db"
+    return os.path.join(os.path.expanduser("~"), ".pettagam", "pettagam.db")
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="pettagam", description="Organize a messy file tree into a smart library.")
     p.add_argument("--version", action="version", version=f"pettagam {__version__}")
-    p.add_argument("--db", default="pettagam.db", help="catalog file; keep it on an SSD (default: ./pettagam.db)")
+    p.add_argument("--db", default=default_db(),
+                   help="catalog file; keep it on an SSD (default: $PETTAGAM_DB, ./pettagam.db, or the panel's)")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("scan", help="read-only inventory of SOURCE")
@@ -121,7 +138,29 @@ def main(argv=None) -> int:
     rl.add_argument("--library", help="where the library is now")
     rl.add_argument("--catalog-from", help="start from the catalog copy in <library>/_meta/catalog.db")
 
+    fd = sub.add_parser("find", help="search the library")
+    fd.add_argument("words", nargs="*", help="words in the name, folder, tags, description or camera")
+    fd.add_argument("--type", help="category, e.g. images or documents")
+    fd.add_argument("--tag")
+    fd.add_argument("--year")
+    fd.add_argument("--limit", type=int, default=50)
+    fd.add_argument("--json", action="store_true", help="print JSON instead of paths")
+
+    st = sub.add_parser("stats", help="what is in the library")
+    st.add_argument("--json", action="store_true")
+
+    du = sub.add_parser("duplicates", help="list identical copies found in the old files (read-only)")
+    du.add_argument("--csv", help="write every group to this CSV file")
+    du.add_argument("--top", type=int, default=15, help="groups to show")
+
+    fx = sub.add_parser("fixity", help="check the library for silent damage")
+    fx.add_argument("--minutes", type=float, default=0, help="stop after this long; the next run carries on")
+    fx.add_argument("--limit", type=int, default=0, help="read at most this many files")
+    fx.add_argument("--library", help="default: the library in the catalog")
+
     args = p.parse_args(argv)
+    if args.db and os.path.dirname(os.path.abspath(args.db)):
+        os.makedirs(os.path.dirname(os.path.abspath(args.db)), exist_ok=True)
     if args.cmd == "relocate":
         from .maintenance import relocate
         if not (args.source or args.library or args.catalog_from):
@@ -278,6 +317,50 @@ def _run(con, args) -> int:
                 return 1
         undo(con, dry_run=args.dry_run)
         return 0
+    if args.cmd == "find":
+        from .library import search
+        res = search(con, " ".join(args.words), args.type or "", args.tag or "", args.year or "", limit=args.limit)
+        lib = get_meta(con, "library") or ""
+        if args.json:
+            print(json.dumps(res, indent=2, default=str))
+            return 0
+        for it in res["items"]:
+            extra = f"  [{it['tags']}]" if it["tags"] else ""
+            print(os.path.join(lib, it["dest"]) + extra)
+        more = f" (showing {len(res['items'])}; use --limit)" if res["total"] > len(res["items"]) else ""
+        print(f"{res['total']:,} found{more}", file=sys.stderr)
+        return 0 if res["total"] else 1
+    if args.cmd == "stats":
+        from .library import print_stats, stats
+        res = stats(con)
+        if args.json:
+            print(json.dumps(res, indent=2))
+        else:
+            print_stats(res)
+        return 0
+    if args.cmd == "duplicates":
+        from .library import duplicate_groups, write_duplicates_csv
+        groups = duplicate_groups(con)
+        if not groups:
+            print("No duplicates found (or duplicate detection was skipped during the scan).")
+            return 0
+        wasted = sum(g["wasted"] for g in groups)
+        print(f"{len(groups):,} sets of identical files; the extra copies take {wasted / 1e9:,.2f} GB. "
+              "Only one copy of each went into the library. Nothing was deleted.")
+        for g in groups[:args.top]:
+            print(f"\n  {g['size'] / 1e6:,.1f} MB x {len(g['copies']) + 1}: keep {g['keep']}")
+            for c in g["copies"][:5]:
+                print(f"      same as: {c}")
+            if len(g["copies"]) > 5:
+                print(f"      ... and {len(g['copies']) - 5} more")
+        if args.csv:
+            write_duplicates_csv(con, args.csv)
+            print(f"\nAll groups written to {args.csv}")
+        return 0
+    if args.cmd == "fixity":
+        from .fixity import check
+        res = check(con, args.library, minutes=args.minutes, limit=args.limit)
+        return 2 if res["damaged"] else (1 if res["missing"] or res["unreadable"] else 0)
     return 0
 
 

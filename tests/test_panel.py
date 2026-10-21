@@ -162,6 +162,11 @@ def test_doctor_service_and_undo_from_panel(server, monkeypatch):
     call(base, "/api/run", {"action": "apply"})
     wait_job(base)
     assert (tmp / "lib" / "_meta" / "catalog.db").exists()
+    st = call(base, "/api/stats")
+    assert st["files"] == 1 and st["by_type"][0]["category"] == "documents"
+    call(base, "/api/run", {"action": "fixity"})
+    st = wait_job(base)
+    assert st["job"]["result"]["recorded"] == 1 and st["job"]["result"]["damaged"] == []
     call(base, "/api/run", {"action": "undo"})
     st = wait_job(base)
     assert st["job"]["result"]["removed"] == 1 and st["summary"]["placed"] == 0

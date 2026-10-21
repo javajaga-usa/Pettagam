@@ -16,6 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 from urllib.parse import parse_qs, urlparse
 
+from . import library
 from .apply import apply
 from .db import connect, get_meta
 from .hashing import find_duplicates
@@ -135,8 +136,13 @@ def _steps(action: str, s: dict):
         from .maintenance import undo
         return undo(connect(s["db"]), progress=say)
 
+    def do_fixity(say):
+        from .fixity import check
+        res = check(connect(s["db"]), s["library"], minutes=60, progress=say)
+        return {k: (v[:200] if isinstance(v, list) else v) for k, v in res.items()}
+
     steps = {"dryrun": dryrun, "apply": do_apply, "verify": do_verify, "inbox": do_inbox,
-             "views": do_views, "tag": do_tag, "undo": do_undo}
+             "views": do_views, "tag": do_tag, "undo": do_undo, "fixity": do_fixity}
 
     def with_backup(say):
         result = steps[action](say)
@@ -151,56 +157,18 @@ def _steps(action: str, s: dict):
     return with_backup
 
 
-EXPLORE_SQL = """
-SELECT 'files' AS src, id, dest, name, size, mtime, taken, camera, width, height, category, subtype, rule,
-       tags, description, path AS original FROM files WHERE action='place' AND status='done'
-UNION ALL
-SELECT 'inbox', id, dest, replace(dest, rtrim(dest, replace(dest, '/', '')), ''), size, mtime, taken, camera,
-       width, height, category, subtype, rule, tags, description, original FROM inbox WHERE action='placed'
-"""
-
-
 def explore(s: dict, q: str = "", category: str = "", tag: str = "", year: str = "",
             offset: int = 0, limit: int = 120) -> dict:
     """Search the finished library: by words in the name, folder, tags or description."""
     if not os.path.exists(s["db"]):
         return {"items": [], "total": 0}
-    con = connect(s["db"])
-    where, args = ["1=1"], []
-    for word in q.split():
-        where.append("(dest LIKE ? OR tags LIKE ? OR description LIKE ? OR camera LIKE ?)")
-        args += [f"%{word}%"] * 4
-    if category:
-        where.append("(category=? OR dest LIKE ?)")
-        args += [category, f"{category}/%"]
-    if tag:
-        where.append("(','||tags||',') LIKE ?")
-        args.append(f"%,{tag},%")
-    if year:
-        where.append("strftime('%Y', COALESCE(taken, mtime), 'unixepoch') = ?")
-        args.append(year)
-    w = " AND ".join(where)
-    total = con.execute(f"SELECT COUNT(*) FROM ({EXPLORE_SQL}) WHERE {w}", args).fetchone()[0]
-    rows = con.execute(f"SELECT * FROM ({EXPLORE_SQL}) WHERE {w} ORDER BY COALESCE(taken, mtime) DESC, dest "
-                       f"LIMIT ? OFFSET ?", (*args, limit, offset)).fetchall()
-    return {"items": [dict(r) for r in rows], "total": total}
+    return library.search(connect(s["db"]), q, category, tag, year, offset, limit)
 
 
 def facets(s: dict) -> dict:
     if not os.path.exists(s["db"]):
         return {"categories": [], "tags": [], "years": []}
-    con = connect(s["db"])
-    base = f"({EXPLORE_SQL})"
-    cats = [list(r) for r in con.execute(
-        f"SELECT category, COUNT(*) FROM {base} WHERE category IS NOT NULL GROUP BY category ORDER BY 2 DESC")]
-    years = [r[0] for r in con.execute(
-        f"SELECT DISTINCT strftime('%Y', COALESCE(taken, mtime), 'unixepoch') AS y FROM {base} ORDER BY y DESC")]
-    counts = {}
-    for (tags,) in con.execute(f"SELECT tags FROM {base} WHERE tags IS NOT NULL AND tags != ''"):
-        for t in tags.split(","):
-            counts[t] = counts.get(t, 0) + 1
-    tags = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:200]
-    return {"categories": cats, "tags": [list(t) for t in tags], "years": years}
+    return library.facets(connect(s["db"]))
 
 
 def library_file(s: dict, rel: str):
@@ -359,6 +327,10 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/explore":
             return self._send(200, explore(s, q.get("q", ""), q.get("category", ""), q.get("tag", ""),
                                            q.get("year", ""), int(q.get("offset", "0") or 0)))
+        if u.path == "/api/stats":
+            if not os.path.exists(s["db"]):
+                return self._send(200, {"files": 0})
+            return self._send(200, library.stats(connect(s["db"])))
         if u.path == "/api/facets":
             return self._send(200, facets(s))
         if u.path == "/api/doctor":
@@ -418,11 +390,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, service.status())
         if u.path == "/api/run":
             action = body.get("action")
-            if action not in ("dryrun", "apply", "verify", "inbox", "views", "tag", "undo"):
+            if action not in ("dryrun", "apply", "verify", "inbox", "views", "tag", "undo", "fixity"):
                 return self._send(400, {"error": "unknown action"})
             if action == "inbox" and not os.path.isdir(s.get("inbox") or ""):
                 return self._send(400, {"error": "Choose the inbox folder first."})
-            if action in ("inbox", "views", "tag") and not s["library"]:
+            if action in ("inbox", "views", "tag", "fixity") and not s["library"]:
                 return self._send(400, {"error": "Choose the library folder first."})
             if action == "dryrun" and not (os.path.isdir(s["source"]) and s["library"]):
                 return self._send(400, {"error": "Choose the old-files folder and the library folder first."})

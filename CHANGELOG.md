@@ -13,9 +13,12 @@ All notable changes to Pettagam. Versions follow [semantic versioning](https://s
 - **Catalog copy in the library** (`<library>/_meta/catalog.db`), refreshed after placing, inbox passes, tagging and undo.
 - **Relocate** (`pettagam relocate --catalog-from ... --source ... --library ...`) for when the drive is mounted somewhere else, such as after the move to Ubuntu.
 - **Setup Pettagam.command** builds a Pettagam app with an icon in `~/Applications` on the Mac itself, so Gatekeeper doesn't block it, with optional AI tagging in a `.venv`. **Uninstall Pettagam.command** removes the app, background job and `.venv`, asks before removing settings, and never touches your files. `launchers/setup-ubuntu.sh` adds a `pettagam` command and menu entry on Ubuntu.
+- **Find** (`pettagam find`), **stats** (`pettagam stats`, and a summary line in Explore library) and **duplicates** (`pettagam duplicates [--csv]`) for the finished library and the old files.
+- **Damage check** (`pettagam fixity [--minutes N]`, and a button in the panel): fingerprints every library file and later tells silent damage (bit rot) apart from edits. Shown in the health check.
 - A release workflow: pushing a `v*` tag tests, builds and publishes a GitHub release from this changelog.
 
 ### Changed
+- The command line uses the panel's catalog (`~/.pettagam/pettagam.db`) unless `PETTAGAM_DB`, `--db` or a `./pettagam.db` says otherwise, so both see the same library.
 - Inbox passes take a lock, so the panel, a Terminal and the background job never sort at the same time.
 - The launchers use the `.venv` Python when it exists.
 
