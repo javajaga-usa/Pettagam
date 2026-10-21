@@ -94,8 +94,12 @@ def test_fixity_slices_and_missing(placed):
 
 def test_default_db(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.delenv("PETTAGAM_DB", raising=False)
-    assert cli.default_db().endswith(os.path.join(".pettagam", "pettagam.db"))
+    assert cli.default_db() == str(tmp_path / "home" / ".pettagam" / "pettagam.db")
+    (tmp_path / "home").mkdir()
+    (tmp_path / "home" / "pettagam.db").write_bytes(b"")  # a catalog made by following the 0.2 README
+    assert cli.default_db() == str(tmp_path / "home" / "pettagam.db")
     (tmp_path / "pettagam.db").write_bytes(b"")
     assert cli.default_db() == "pettagam.db"
     monkeypatch.setenv("PETTAGAM_DB", "/x/y.db")

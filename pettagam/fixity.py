@@ -39,7 +39,8 @@ def check(con, library: str = None, minutes: float = 0, limit: int = 0, progress
     con.executescript(SCHEMA)
     dests = _library_dests(con)
     known = {r["dest"]: r for r in con.execute("SELECT * FROM fixity")}
-    gone = [d for d in known if d not in set(dests)]
+    current = set(dests)
+    gone = [d for d in known if d not in current]
     con.executemany("DELETE FROM fixity WHERE dest=?", [(d,) for d in gone])  # undone or removed by Pettagam
     order = sorted(dests, key=lambda d: (d in known, known[d]["checked"] if d in known else 0, d))
     if limit:

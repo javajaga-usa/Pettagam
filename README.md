@@ -58,7 +58,7 @@ The panel remembers your folders, shows live progress, and keeps its catalog in 
 
 Replace the paths with yours. On the Mac, the N300 Pro appears under `/Volumes/`. Put the library on the **same drive** as the old files so hardlinks can be used.
 
-The command line and the panel share one catalog, `~/.pettagam/pettagam.db`, on the computer's internal SSD. To use another one, set `PETTAGAM_DB` or pass `--db FILE`. A `pettagam.db` in the current folder is used if there is one, as in earlier versions.
+The command line and the panel share one catalog, `~/.pettagam/pettagam.db`, on the computer's internal SSD. To use another one, set `PETTAGAM_DB` or pass `--db FILE`. A `pettagam.db` in the current folder is used if there is one, and so is `~/pettagam.db` from version 0.2 until the panel has made its own.
 
 **1. Dry run (changes nothing):**
 

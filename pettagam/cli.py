@@ -49,7 +49,9 @@ def default_db() -> str:
         return env
     if os.path.exists("pettagam.db"):
         return "pettagam.db"
-    return os.path.join(os.path.expanduser("~"), ".pettagam", "pettagam.db")
+    shared = os.path.join(os.path.expanduser("~"), ".pettagam", "pettagam.db")
+    older = os.path.join(os.path.expanduser("~"), "pettagam.db")  # where the 0.2 README put it
+    return older if os.path.exists(older) and not os.path.exists(shared) else shared
 
 
 def main(argv=None) -> int:
