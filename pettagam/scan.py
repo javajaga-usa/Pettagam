@@ -38,7 +38,8 @@ def _examine(root: str, rel: str, st) -> tuple:
     ext = cl.effective_ext(name_ext, s.kind if s else None)
     return (rel, name, st.st_size, st.st_mtime, st.st_dev, st.st_ino, ext,
             s.kind if s else None, s.width if s else None, s.height if s else None,
-            s.camera if s else None, int(bool(s and s.has_exif)), int(bool(s and s.has_tags)), junk)
+            s.camera if s else None, int(bool(s and s.has_exif)), int(bool(s and s.has_tags)), junk,
+            s.taken if s else None)
 
 
 def _scan_dir(root: str, d: str):
@@ -65,10 +66,13 @@ def scan(con, source: str, workers: int = 2, progress=print) -> int:
     if not os.path.isdir(source):
         raise SystemExit(f"Source folder not found: {source}")
     set_meta(con, "source", source)
+    # Keep AI tags across a fresh scan: they are matched back by path, size and date.
+    kept = {(r["path"], r["size"], r["mtime"]): (r["tags"], r["description"]) for r in con.execute(
+        "SELECT path, size, mtime, tags, description FROM files WHERE tags IS NOT NULL")}
     con.execute("DELETE FROM files")
     t0, n, last = time.time(), 0, 0
     sql = ("INSERT INTO files(path,name,size,mtime,dev,ino,ext,kind,width,height,camera,has_exif,"
-           "has_tags,junk) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+           "has_tags,junk,taken) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
     # One task per directory keeps overhead low while still reading several folders at once,
     # which is what helps on hard drives and network shares.
     with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -86,6 +90,10 @@ def scan(con, source: str, workers: int = 2, progress=print) -> int:
                 last = n
                 progress(f"  scanned {n:,} files ({n / (time.time() - t0):,.0f}/s)")
     con.commit()
+    if kept:
+        con.executemany("UPDATE files SET tags=?, description=? WHERE path=? AND size=? AND mtime=?",
+                        [(t, d, p, sz, m) for (p, sz, m), (t, d) in kept.items()])
+        con.commit()
     set_meta(con, "scanned_at", time.time())
     progress(f"Scanned {n:,} files in {time.time() - t0:,.1f}s")
     return n

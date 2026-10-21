@@ -4,6 +4,7 @@ Stdlib only, so it runs the same on macOS and Ubuntu. Reads at most HEAD_BYTES p
 """
 from __future__ import annotations
 
+import calendar
 import struct
 from dataclasses import dataclass
 from typing import Optional
@@ -19,6 +20,7 @@ class Sniff:
     camera: Optional[str] = None    # "Make Model" from EXIF, when present
     has_exif: bool = False
     has_tags: bool = False          # audio has artist/title tags
+    taken: Optional[float] = None   # EXIF capture time (DateTimeOriginal, else DateTime), as epoch seconds
 
 
 def sniff_file(path: str) -> Sniff:
@@ -108,23 +110,60 @@ def _jpeg(b: bytes) -> Sniff:
     return s
 
 
+def _exif_time(text: str) -> Optional[float]:
+    """'2021:07:04 18:30:00' -> epoch seconds. EXIF has no time zone, so it is read as UTC."""
+    try:
+        y, mo, d = int(text[0:4]), int(text[5:7]), int(text[8:10])
+        h, mi, sec = int(text[11:13]), int(text[14:16]), int(text[17:19])
+        if not (1900 < y < 2200 and 1 <= mo <= 12 and 1 <= d <= 31):
+            return None
+        return float(calendar.timegm((y, mo, d, h, mi, sec, 0, 0, 0)))
+    except (ValueError, IndexError):
+        return None
+
+
+def _ifd(b: bytes, base: int, ifd: int, e: str) -> dict:
+    """Tag -> (type, count, value-or-offset, entry offset) for one IFD."""
+    out = {}
+    count = struct.unpack(e + "H", b[base + ifd:base + ifd + 2])[0]
+    for k in range(min(count, 64)):
+        off = base + ifd + 2 + 12 * k
+        tag, typ, cnt, val = struct.unpack(e + "HHII", b[off:off + 12])
+        out[tag] = (typ, cnt, val, off)
+    return out
+
+
+def _ascii(b: bytes, base: int, entry) -> str:
+    typ, cnt, val, off = entry
+    if typ != 2:
+        return ""
+    start = base + val if cnt > 4 else off + 8
+    return b[start:start + cnt].split(b"\x00")[0].decode("ascii", "replace").strip()
+
+
 def _tiff_exif(b: bytes, base: int, s: Sniff) -> None:
-    """Read Make (0x010F) and Model (0x0110) from IFD0 of a TIFF block starting at base."""
+    """Read Make, Model and the capture time from a TIFF block starting at base."""
     try:
         order = b[base:base + 2]
         e = "<" if order == b"II" else ">"
-        ifd = struct.unpack(e + "I", b[base + 4:base + 8])[0]
-        count = struct.unpack(e + "H", b[base + ifd:base + ifd + 2])[0]
-        found = {}
-        for k in range(min(count, 64)):
-            off = base + ifd + 2 + 12 * k
-            tag, typ, cnt, val = struct.unpack(e + "HHII", b[off:off + 12])
-            if tag in (0x010F, 0x0110) and typ == 2:
-                start = base + val if cnt > 4 else off + 8
-                found[tag] = b[start:start + cnt].split(b"\x00")[0].decode("ascii", "replace").strip()
+        ifd0 = _ifd(b, base, struct.unpack(e + "I", b[base + 4:base + 8])[0], e)
+        found = {t: _ascii(b, base, ifd0[t]) for t in (0x010F, 0x0110, 0x0132) if t in ifd0}
         cam = " ".join(v for v in (found.get(0x010F), found.get(0x0110)) if v)
         if cam:
             s.camera = cam
+            s.has_exif = True
+        taken = None
+        if 0x8769 in ifd0:  # pointer to the Exif sub-IFD, which holds DateTimeOriginal
+            try:
+                sub = _ifd(b, base, ifd0[0x8769][2], e)
+                if 0x9003 in sub:
+                    taken = _exif_time(_ascii(b, base, sub[0x9003]))
+            except (struct.error, IndexError):
+                pass
+        if taken is None and found.get(0x0132):
+            taken = _exif_time(found[0x0132])
+        if taken is not None:
+            s.taken = taken
             s.has_exif = True
     except (struct.error, IndexError):
         pass

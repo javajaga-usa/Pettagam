@@ -5,6 +5,7 @@ Stdlib only. Binds to 127.0.0.1 by default, so only this computer can open it.
 from __future__ import annotations
 
 import json
+import mimetypes
 import os
 import secrets
 import string
@@ -20,12 +21,13 @@ from .db import connect, get_meta
 from .hashing import find_duplicates
 from .plan import SPLIT_AT, plan
 from .report import report
+from .rules import default_path, load_rules
 from .scan import scan
 from .verify import verify
 
 HOME = os.path.join(os.path.expanduser("~"), ".pettagam")
 SETTINGS = os.path.join(HOME, "panel.json")
-DEFAULTS = {"source": "", "library": "", "db": os.path.join(HOME, "pettagam.db"),
+DEFAULTS = {"source": "", "library": "", "inbox": "", "db": os.path.join(HOME, "pettagam.db"),
             "report": os.path.join(HOME, "report"), "workers": 2, "split_at": SPLIT_AT}
 
 
@@ -99,7 +101,10 @@ def _steps(action: str, s: dict):
         con = connect(s["db"])
         scan(con, s["source"], workers=int(s["workers"]), progress=say)
         find_duplicates(con, workers=int(s["workers"]), progress=say)
-        counts = plan(con, s["library"], split_at=int(s["split_at"]), progress=say)
+        rules = load_rules(default_path(s["library"]))
+        if rules:
+            say(f"Using {len(rules)} of your rules from {default_path(s['library'])}")
+        counts = plan(con, s["library"], split_at=int(s["split_at"]), rules=rules, progress=say)
         report(con, s["report"], progress=say)
         return counts
 
@@ -113,7 +118,83 @@ def _steps(action: str, s: dict):
         res["problems"] = {k: v[:200] for k, v in res["problems"].items()}
         return res
 
-    return {"dryrun": dryrun, "apply": do_apply, "verify": do_verify}[action]
+    def do_inbox(say):
+        from .inbox import sort_inbox
+        con = connect(s["db"])
+        return sort_inbox(con, s["inbox"], s["library"], load_rules(default_path(s["library"])), progress=say)
+
+    def do_views(say):
+        from .views import build_views
+        return build_views(connect(s["db"]), s["library"], progress=say)
+
+    def do_tag(say):
+        from .tag import tag_library
+        return tag_library(connect(s["db"]), s["library"], workers=int(s["workers"]) * 2, progress=say)
+
+    return {"dryrun": dryrun, "apply": do_apply, "verify": do_verify, "inbox": do_inbox,
+            "views": do_views, "tag": do_tag}[action]
+
+
+EXPLORE_SQL = """
+SELECT 'files' AS src, id, dest, name, size, mtime, taken, camera, width, height, category, subtype, rule,
+       tags, description, path AS original FROM files WHERE action='place' AND status='done'
+UNION ALL
+SELECT 'inbox', id, dest, replace(dest, rtrim(dest, replace(dest, '/', '')), ''), size, mtime, taken, camera,
+       width, height, category, subtype, rule, tags, description, original FROM inbox WHERE action='placed'
+"""
+
+
+def explore(s: dict, q: str = "", category: str = "", tag: str = "", year: str = "",
+            offset: int = 0, limit: int = 120) -> dict:
+    """Search the finished library: by words in the name, folder, tags or description."""
+    if not os.path.exists(s["db"]):
+        return {"items": [], "total": 0}
+    con = connect(s["db"])
+    where, args = ["1=1"], []
+    for word in q.split():
+        where.append("(dest LIKE ? OR tags LIKE ? OR description LIKE ? OR camera LIKE ?)")
+        args += [f"%{word}%"] * 4
+    if category:
+        where.append("(category=? OR dest LIKE ?)")
+        args += [category, f"{category}/%"]
+    if tag:
+        where.append("(','||tags||',') LIKE ?")
+        args.append(f"%,{tag},%")
+    if year:
+        where.append("strftime('%Y', COALESCE(taken, mtime), 'unixepoch') = ?")
+        args.append(year)
+    w = " AND ".join(where)
+    total = con.execute(f"SELECT COUNT(*) FROM ({EXPLORE_SQL}) WHERE {w}", args).fetchone()[0]
+    rows = con.execute(f"SELECT * FROM ({EXPLORE_SQL}) WHERE {w} ORDER BY COALESCE(taken, mtime) DESC, dest "
+                       f"LIMIT ? OFFSET ?", (*args, limit, offset)).fetchall()
+    return {"items": [dict(r) for r in rows], "total": total}
+
+
+def facets(s: dict) -> dict:
+    if not os.path.exists(s["db"]):
+        return {"categories": [], "tags": [], "years": []}
+    con = connect(s["db"])
+    base = f"({EXPLORE_SQL})"
+    cats = [list(r) for r in con.execute(
+        f"SELECT category, COUNT(*) FROM {base} WHERE category IS NOT NULL GROUP BY category ORDER BY 2 DESC")]
+    years = [r[0] for r in con.execute(
+        f"SELECT DISTINCT strftime('%Y', COALESCE(taken, mtime), 'unixepoch') AS y FROM {base} ORDER BY y DESC")]
+    counts = {}
+    for (tags,) in con.execute(f"SELECT tags FROM {base} WHERE tags IS NOT NULL AND tags != ''"):
+        for t in tags.split(","):
+            counts[t] = counts.get(t, 0) + 1
+    tags = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:200]
+    return {"categories": cats, "tags": [list(t) for t in tags], "years": years}
+
+
+def library_file(s: dict, rel: str):
+    """Absolute path of a file inside the library, or None (never anything outside it)."""
+    lib = s.get("library")
+    if not lib or not rel:
+        return None
+    root = os.path.realpath(lib)
+    p = os.path.realpath(os.path.join(root, rel))
+    return p if p.startswith(root + os.sep) and os.path.isfile(p) else None
 
 
 def summary(s: dict) -> dict:
@@ -152,7 +233,7 @@ def plan_rows(s: dict, query: str, folder: str, limit: int = 200) -> list:
         where.append("(path LIKE ? OR dest LIKE ?)")
         args += [f"%{query}%", f"%{query}%"]
     rows = con.execute(
-        f"SELECT path, dest, action, folder, confidence, reason, size, junk, status FROM files "
+        f"SELECT path, dest, action, folder, confidence, reason, rule, size, junk, status FROM files "
         f"WHERE {' AND '.join(where)} ORDER BY dest, path LIMIT ?", (*args, limit)).fetchall()
     return [dict(r) for r in rows]
 
@@ -197,11 +278,52 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         if cookie and self.token:
             self.send_header("Set-Cookie", f"pettagam={self.token}; HttpOnly; SameSite=Strict; Path=/")
-        self.send_header("Content-Type", f"{ctype}; charset=utf-8")
+        self.send_header("Content-Type", f"{ctype}; charset=utf-8" if ctype.startswith(("text/", "application/json"))
+                         else ctype)
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(data)
+
+    def _send_file(self, path: str):
+        """Stream a library file, with byte ranges so videos can be played and scrubbed."""
+        size = os.path.getsize(path)
+        start, end = 0, size - 1
+        rng = self.headers.get("Range", "")
+        if rng.startswith("bytes=") and "," not in rng:
+            a, _, b = rng[6:].partition("-")
+            try:
+                if a:
+                    start, end = int(a), min(int(b), size - 1) if b else size - 1
+                elif b:
+                    start = max(0, size - int(b))
+            except ValueError:
+                start, end = 0, size - 1
+        if start > end and size:
+            self.send_response(416)
+            self.send_header("Content-Range", f"bytes */{size}")
+            self.end_headers()
+            return
+        self.send_response(206 if rng and (start, end) != (0, size - 1) else 200)
+        self.send_header("Content-Type", mimetypes.guess_type(path)[0] or "application/octet-stream")
+        self.send_header("Content-Length", str(max(0, end - start + 1)))
+        self.send_header("Accept-Ranges", "bytes")
+        if rng:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self.send_header("Cache-Control", "private, max-age=3600")
+        self.end_headers()
+        with open(path, "rb") as f:
+            f.seek(start)
+            left = end - start + 1
+            while left > 0:
+                chunk = f.read(min(1 << 20, left))
+                if not chunk:
+                    break
+                try:
+                    self.wfile.write(chunk)
+                except (BrokenPipeError, ConnectionResetError):
+                    return
+                left -= len(chunk)
 
     def do_GET(self):
         u = urlparse(self.path)
@@ -218,6 +340,21 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, browse(q.get("path", "")))
         if u.path == "/api/plan":
             return self._send(200, plan_rows(s, q.get("q", ""), q.get("folder", "")))
+        if u.path == "/api/explore":
+            return self._send(200, explore(s, q.get("q", ""), q.get("category", ""), q.get("tag", ""),
+                                           q.get("year", ""), int(q.get("offset", "0") or 0)))
+        if u.path == "/api/facets":
+            return self._send(200, facets(s))
+        if u.path == "/api/estimate":
+            from .tag import estimate
+            if not os.path.exists(s["db"]):
+                return self._send(200, {"files": 0, "usd": 0, "by_kind": {}})
+            return self._send(200, estimate(connect(s["db"])))
+        if u.path == "/api/file":
+            p = library_file(s, q.get("path", ""))
+            if not p:
+                return self._send(404, {"error": "not found"})
+            return self._send_file(p)
         if u.path == "/api/report":
             p = os.path.join(s["report"], "report.md")
             return self._send(200, open(p, encoding="utf-8").read() if os.path.exists(p) else "", "text/plain")
@@ -238,18 +375,22 @@ class Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         s = load_settings()
         if u.path == "/api/settings":
-            for k in ("source", "library", "workers", "split_at"):
+            for k in ("source", "library", "inbox", "workers", "split_at"):
                 if k in body:
                     s[k] = body[k]
             save_settings(s)
             return self._send(200, {"settings": s})
         if u.path == "/api/run":
             action = body.get("action")
-            if action not in ("dryrun", "apply", "verify"):
+            if action not in ("dryrun", "apply", "verify", "inbox", "views", "tag"):
                 return self._send(400, {"error": "unknown action"})
+            if action == "inbox" and not os.path.isdir(s.get("inbox") or ""):
+                return self._send(400, {"error": "Choose the inbox folder first."})
+            if action in ("inbox", "views", "tag") and not s["library"]:
+                return self._send(400, {"error": "Choose the library folder first."})
             if action == "dryrun" and not (os.path.isdir(s["source"]) and s["library"]):
                 return self._send(400, {"error": "Choose the old-files folder and the library folder first."})
-            if action != "dryrun" and not summary(s).get("planned"):
+            if action in ("apply", "verify", "views", "tag") and not summary(s).get("planned"):
                 return self._send(400, {"error": "Run the dry run first."})
             if not JOB.start(action, _steps(action, s)):
                 return self._send(409, {"error": "Another step is still running."})
