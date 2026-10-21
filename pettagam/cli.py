@@ -5,6 +5,7 @@
   pettagam apply                    hardlink or copy files into the library
   pettagam verify [--rescan]        check everything is in sync
   pettagam dryrun SOURCE --library LIB   scan + plan + report in one go (changes nothing)
+  pettagam panel                    open the point-and-click panel in your browser
 """
 from __future__ import annotations
 
@@ -55,7 +56,17 @@ def main(argv=None) -> int:
     v.add_argument("--rescan", action="store_true", help="also look for changes in the source since the scan")
     v.add_argument("--json", help="write full results to this file")
 
+    pn = sub.add_parser("panel", help="open the point-and-click panel in your browser")
+    pn.add_argument("--port", type=int, default=8484)
+    pn.add_argument("--host", default="127.0.0.1",
+                    help="127.0.0.1 = this computer only; 0.0.0.0 = reachable from your network")
+    pn.add_argument("--no-browser", action="store_true", help="do not open a browser window")
+
     args = p.parse_args(argv)
+    if args.cmd == "panel":
+        from .panel import serve
+        serve(args.host, args.port, open_browser=not args.no_browser)
+        return 0
     con = connect(args.db)
 
     if args.cmd in ("scan", "dryrun"):

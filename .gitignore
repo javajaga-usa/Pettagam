@@ -5,3 +5,5 @@ __pycache__/
 *.db-shm
 *.db-wal
 pettagam-report/
+build/
+.DS_Store
