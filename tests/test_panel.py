@@ -137,3 +137,55 @@ def test_explore_inbox_and_files(server):
     call(base, "/api/run", {"action": "views"})
     assert wait_job(base)["job"]["result"]["Recent"] == 3
     assert call(base, "/api/estimate")["files"] == 3
+
+
+def test_doctor_service_and_undo_from_panel(server, monkeypatch):
+    from pettagam import service
+    base, tmp = server
+    monkeypatch.setenv("HOME", str(tmp / "home"))
+    calls = []
+    monkeypatch.setattr(service, "RUNNER", lambda args, **kw: calls.append(args) or type("R", (), {"returncode": 0})())
+    src, inbox = tmp / "old", tmp / "inbox"
+    inbox.mkdir()
+    write(str(src), "docs/Invoice_1.pdf", b"%PDF-1.7 hello")
+    call(base, "/api/settings", {"source": str(src), "library": str(tmp / "lib"), "inbox": str(inbox)})
+    names = {c["name"]: c["status"] for c in call(base, "/api/doctor")}
+    assert names["Old files"] == "ok" and "Placement" in names
+
+    st = call(base, "/api/service", {"on": True, "every": 600})
+    assert st["installed"] and st["every"] == 600 and calls
+    assert call(base, "/api/service")["installed"]
+    assert not call(base, "/api/service", {"on": False})["installed"]
+
+    call(base, "/api/run", {"action": "dryrun"})
+    wait_job(base)
+    call(base, "/api/run", {"action": "apply"})
+    wait_job(base)
+    assert (tmp / "lib" / "_meta" / "catalog.db").exists()
+    st = call(base, "/api/stats")
+    assert st["files"] == 1 and st["by_type"][0]["category"] == "documents"
+    call(base, "/api/run", {"action": "fixity"})
+    st = wait_job(base)
+    assert st["job"]["result"]["recorded"] == 1 and st["job"]["result"]["damaged"] == []
+    call(base, "/api/run", {"action": "undo"})
+    st = wait_job(base)
+    assert st["job"]["result"]["removed"] == 1 and st["summary"]["placed"] == 0
+    assert (src / "docs" / "Invoice_1.pdf").exists()
+
+
+def test_rules_editor(server):
+    base, tmp = server
+    lib = tmp / "lib"
+    assert call(base, "/api/rules")["path"] is None
+    call(base, "/api/settings", {"library": str(lib)})
+    r = call(base, "/api/rules")
+    assert not r["exists"] and '"Tax papers"' in r["text"]  # the starter examples, not saved yet
+    bad = call(base, "/api/rules", {"text": '{"rules": [{"name": "x", "if": {"colour": "red"}, "then": "a"}]}'})
+    assert not bad["ok"] and "colour" in bad["error"]
+    assert not call(base, "/api/rules", {"text": "{nope"})["ok"]
+    text = '{"rules": [{"name": "Tax", "if": {"ext": "pdf", "name": "*tax*"}, "then": "documents/tax"}]}'
+    res = call(base, "/api/rules", {"text": text, "save": True})
+    assert res["ok"] and res["rules"][0]["name"] == "Tax" and res["saved"].endswith("rules.json")
+    assert call(base, "/api/rules")["exists"]
+    assert not call(base, "/api/rules", {"text": '{"rules": [{"then": "../x"}]}', "save": True})["ok"]
+    assert "Tax" in (lib / "_meta" / "rules.json").read_text()  # a bad save leaves the good file alone

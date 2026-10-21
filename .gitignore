@@ -7,3 +7,4 @@ __pycache__/
 pettagam-report/
 build/
 .DS_Store
+.venv/

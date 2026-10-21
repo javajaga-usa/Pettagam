@@ -16,6 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 from urllib.parse import parse_qs, urlparse
 
+from . import library
 from .apply import apply
 from .db import connect, get_meta
 from .hashing import find_duplicates
@@ -131,17 +132,29 @@ def _steps(action: str, s: dict):
         from .tag import tag_library
         return tag_library(connect(s["db"]), s["library"], workers=int(s["workers"]) * 2, progress=say)
 
-    return {"dryrun": dryrun, "apply": do_apply, "verify": do_verify, "inbox": do_inbox,
-            "views": do_views, "tag": do_tag}[action]
+    def do_undo(say):
+        from .maintenance import undo
+        return undo(connect(s["db"]), progress=say)
 
+    def do_fixity(say):
+        from .fixity import check
+        res = check(connect(s["db"]), s["library"], minutes=60, progress=say)
+        return {k: (v[:200] if isinstance(v, list) else v) for k, v in res.items()}
 
-EXPLORE_SQL = """
-SELECT 'files' AS src, id, dest, name, size, mtime, taken, camera, width, height, category, subtype, rule,
-       tags, description, path AS original FROM files WHERE action='place' AND status='done'
-UNION ALL
-SELECT 'inbox', id, dest, replace(dest, rtrim(dest, replace(dest, '/', '')), ''), size, mtime, taken, camera,
-       width, height, category, subtype, rule, tags, description, original FROM inbox WHERE action='placed'
-"""
+    steps = {"dryrun": dryrun, "apply": do_apply, "verify": do_verify, "inbox": do_inbox,
+             "views": do_views, "tag": do_tag, "undo": do_undo, "fixity": do_fixity}
+
+    def with_backup(say):
+        result = steps[action](say)
+        if action in ("apply", "inbox", "tag", "undo"):
+            from .maintenance import backup_catalog
+            try:
+                backup_catalog(connect(s["db"]))
+            except Exception as e:  # a missing copy must not turn a good result into an error
+                say(f"Note: could not save the catalog copy in the library: {e}")
+        return result
+
+    return with_backup
 
 
 def explore(s: dict, q: str = "", category: str = "", tag: str = "", year: str = "",
@@ -149,42 +162,54 @@ def explore(s: dict, q: str = "", category: str = "", tag: str = "", year: str =
     """Search the finished library: by words in the name, folder, tags or description."""
     if not os.path.exists(s["db"]):
         return {"items": [], "total": 0}
-    con = connect(s["db"])
-    where, args = ["1=1"], []
-    for word in q.split():
-        where.append("(dest LIKE ? OR tags LIKE ? OR description LIKE ? OR camera LIKE ?)")
-        args += [f"%{word}%"] * 4
-    if category:
-        where.append("(category=? OR dest LIKE ?)")
-        args += [category, f"{category}/%"]
-    if tag:
-        where.append("(','||tags||',') LIKE ?")
-        args.append(f"%,{tag},%")
-    if year:
-        where.append("strftime('%Y', COALESCE(taken, mtime), 'unixepoch') = ?")
-        args.append(year)
-    w = " AND ".join(where)
-    total = con.execute(f"SELECT COUNT(*) FROM ({EXPLORE_SQL}) WHERE {w}", args).fetchone()[0]
-    rows = con.execute(f"SELECT * FROM ({EXPLORE_SQL}) WHERE {w} ORDER BY COALESCE(taken, mtime) DESC, dest "
-                       f"LIMIT ? OFFSET ?", (*args, limit, offset)).fetchall()
-    return {"items": [dict(r) for r in rows], "total": total}
+    return library.search(connect(s["db"]), q, category, tag, year, offset, limit)
 
 
 def facets(s: dict) -> dict:
     if not os.path.exists(s["db"]):
         return {"categories": [], "tags": [], "years": []}
-    con = connect(s["db"])
-    base = f"({EXPLORE_SQL})"
-    cats = [list(r) for r in con.execute(
-        f"SELECT category, COUNT(*) FROM {base} WHERE category IS NOT NULL GROUP BY category ORDER BY 2 DESC")]
-    years = [r[0] for r in con.execute(
-        f"SELECT DISTINCT strftime('%Y', COALESCE(taken, mtime), 'unixepoch') AS y FROM {base} ORDER BY y DESC")]
-    counts = {}
-    for (tags,) in con.execute(f"SELECT tags FROM {base} WHERE tags IS NOT NULL AND tags != ''"):
-        for t in tags.split(","):
-            counts[t] = counts.get(t, 0) + 1
-    tags = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:200]
-    return {"categories": cats, "tags": [list(t) for t in tags], "years": years}
+    return library.facets(connect(s["db"]))
+
+
+def rules_file(s: dict) -> dict:
+    """The rules file for the editor: its text, or the starter examples when there is none yet."""
+    from .rules import STARTER
+    path = default_path(s.get("library"))
+    if not path:
+        return {"path": None, "text": "", "exists": False}
+    try:
+        with open(path, encoding="utf-8") as f:
+            return {"path": path, "text": f.read(), "exists": True}
+    except OSError:
+        return {"path": path, "text": json.dumps(STARTER, indent=2) + "\n", "exists": False}
+
+
+def check_rules(s: dict, text: str, save: bool = False) -> dict:
+    """Validate rules text, count what each rule would place, and save it when asked and valid."""
+    from .plan import rule_counts
+    from .rules import RuleError, parse_rules
+    try:
+        data = json.loads(text)
+    except ValueError as e:
+        return {"ok": False, "error": f"Not valid JSON: {e}"}
+    try:
+        rules = parse_rules(data)
+    except RuleError as e:
+        return {"ok": False, "error": str(e)}
+    counts = rule_counts(connect(s["db"]), rules) if os.path.exists(s["db"]) else {}
+    off = len(data["rules"]) - len(rules)
+    res = {"ok": True, "off": off, "rules": [{"name": r.name, "then": r.then, "files": counts.get(r.name, 0)}
+                                             for r in rules]}
+    if save:
+        path = default_path(s.get("library"))
+        if not path:
+            return {"ok": False, "error": "Choose the library folder first."}
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path + ".tmp", "w", encoding="utf-8") as f:
+            f.write(text if text.endswith("\n") else text + "\n")
+        os.replace(path + ".tmp", path)
+        res["saved"] = path
+    return res
 
 
 def library_file(s: dict, rel: str):
@@ -343,8 +368,22 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/explore":
             return self._send(200, explore(s, q.get("q", ""), q.get("category", ""), q.get("tag", ""),
                                            q.get("year", ""), int(q.get("offset", "0") or 0)))
+        if u.path == "/api/rules":
+            return self._send(200, rules_file(s))
+        if u.path == "/api/stats":
+            if not os.path.exists(s["db"]):
+                return self._send(200, {"files": 0})
+            return self._send(200, library.stats(connect(s["db"])))
         if u.path == "/api/facets":
             return self._send(200, facets(s))
+        if u.path == "/api/doctor":
+            from .doctor import run_checks
+            con = connect(s["db"]) if os.path.exists(s["db"]) else None
+            return self._send(200, run_checks(con, s["source"] or None, s["library"] or None,
+                                              s.get("inbox") or None, s["db"]))
+        if u.path == "/api/service":
+            from . import service
+            return self._send(200, {**service.status(), "log": service.last_log()})
         if u.path == "/api/estimate":
             from .tag import estimate
             if not os.path.exists(s["db"]):
@@ -380,17 +419,33 @@ class Handler(BaseHTTPRequestHandler):
                     s[k] = body[k]
             save_settings(s)
             return self._send(200, {"settings": s})
+        if u.path == "/api/rules":
+            if JOB.running and body.get("save"):
+                return self._send(409, {"error": "Wait for the current step to finish."})
+            return self._send(200, check_rules(s, str(body.get("text", "")), bool(body.get("save"))))
+        if u.path == "/api/service":
+            from . import service
+            try:
+                if body.get("on"):
+                    if not (os.path.isdir(s.get("inbox") or "") and s["library"]):
+                        return self._send(400, {"error": "Choose the inbox and library folders first."})
+                    service.install(s["db"], s["inbox"], s["library"], every=int(body.get("every") or 300))
+                else:
+                    service.uninstall()
+            except SystemExit as e:
+                return self._send(400, {"error": str(e)})
+            return self._send(200, service.status())
         if u.path == "/api/run":
             action = body.get("action")
-            if action not in ("dryrun", "apply", "verify", "inbox", "views", "tag"):
+            if action not in ("dryrun", "apply", "verify", "inbox", "views", "tag", "undo", "fixity"):
                 return self._send(400, {"error": "unknown action"})
             if action == "inbox" and not os.path.isdir(s.get("inbox") or ""):
                 return self._send(400, {"error": "Choose the inbox folder first."})
-            if action in ("inbox", "views", "tag") and not s["library"]:
+            if action in ("inbox", "views", "tag", "fixity") and not s["library"]:
                 return self._send(400, {"error": "Choose the library folder first."})
             if action == "dryrun" and not (os.path.isdir(s["source"]) and s["library"]):
                 return self._send(400, {"error": "Choose the old-files folder and the library folder first."})
-            if action in ("apply", "verify", "views", "tag") and not summary(s).get("planned"):
+            if action in ("apply", "verify", "views", "tag", "undo") and not summary(s).get("planned"):
                 return self._send(400, {"error": "Run the dry run first."})
             if not JOB.start(action, _steps(action, s)):
                 return self._send(409, {"error": "Another step is still running."})

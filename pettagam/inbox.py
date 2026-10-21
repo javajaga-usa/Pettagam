@@ -122,6 +122,35 @@ def sort_inbox(con, inbox: str, library: str = None, rules=(), settle: float = S
         if a.startswith(c) or c.startswith(a):
             raise SystemExit("The inbox and the old-files folder must be separate: the old files are never moved.")
 
+    lock = None if dry_run else _lock(library)
+    if lock is False:
+        progress("Another inbox pass is running; skipping this one.")
+        return {"placed": 0, "duplicate": 0, "waiting": 0, "error": 0, "ignored": 0, "busy": 1}
+    try:
+        return _sort(con, inbox, library, rules, settle, dry_run, progress)
+    finally:
+        if lock:
+            lock.close()
+
+
+def _lock(library: str):
+    """Only one inbox pass at a time (the panel, a Terminal and the background job may overlap)."""
+    try:
+        import fcntl
+    except ImportError:  # Windows: no lock
+        return None
+    meta = os.path.join(library, "_meta")
+    os.makedirs(meta, exist_ok=True)
+    f = open(os.path.join(meta, "inbox.lock"), "w")
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        f.close()
+        return False
+    return f
+
+
+def _sort(con, inbox, library, rules, settle, dry_run, progress) -> dict:
     now = time.time()
     counts = {"placed": 0, "duplicate": 0, "waiting": 0, "error": 0, "ignored": 0}
     log = []

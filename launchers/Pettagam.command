@@ -1,8 +1,8 @@
 #!/bin/bash
-# Double-click in Finder to open the Pettagam panel in your browser.
-# First time: right-click > Open, because macOS blocks unsigned scripts.
+# Opens the Pettagam panel in your browser. Close this window to stop it.
+# Run "Setup Pettagam.command" once to get a Pettagam app in Applications instead.
 cd "$(dirname "$0")/.." || exit 1
-if command -v pettagam >/dev/null 2>&1; then
-  exec pettagam panel
+if [ -x .venv/bin/python ]; then
+  exec .venv/bin/python -m pettagam panel "$@"
 fi
-exec python3 -m pettagam panel
+exec python3 -m pettagam panel "$@"
