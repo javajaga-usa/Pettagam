@@ -58,7 +58,8 @@ def test_service_mac_launch_agent(tmp_path):
     plist = home / "Library" / "LaunchAgents" / f"{service.LABEL}.plist"
     data = plistlib.loads(plist.read_bytes())
     assert data["ProgramArguments"][1:4] == ["-m", "pettagam", "--db"]
-    assert data["ProgramArguments"][-4:] == ["inbox", str(inbox), "--library", str(tmp_path / "lib")]
+    assert data["ProgramArguments"][-1] == "--notify"
+    assert data["ProgramArguments"][-5:-1] == ["inbox", str(inbox), "--library", str(tmp_path / "lib")]
     assert data["WatchPaths"] == [str(inbox)]
     assert data["StartInterval"] == 120 and os.path.isdir(data["EnvironmentVariables"]["PYTHONPATH"])
     assert fake.calls[-1][:2] == ["launchctl", "bootstrap"] and st["started"]

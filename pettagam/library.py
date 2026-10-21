@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import csv
 import os
+import shutil
 import time
 
 from .db import get_meta
@@ -140,3 +141,48 @@ def write_duplicates_csv(con, path: str) -> int:
                     m = ""
                 w.writerow([i, role, os.path.join(source, p), g["size"], m])
     return len(groups)
+
+
+def export(con, dest: str, q: str = "", category: str = "", tag: str = "", year: str = "", flat: bool = False,
+           dry_run: bool = False, progress=print) -> dict:
+    """Copy the library files that match a search into DEST. The library is only read; nothing is overwritten."""
+    library = get_meta(con, "library")
+    total = search(con, q, category, tag, year, limit=0)["total"]
+    items = search(con, q, category, tag, year, limit=max(total, 1))["items"]
+    res = {"copied": 0, "same": 0, "renamed": 0, "errors": 0, "bytes": 0}
+    for it in items:
+        src = os.path.join(library, it["dest"])
+        rel = os.path.basename(it["dest"]) if flat else it["dest"]
+        out = os.path.join(dest, rel)
+        if os.path.exists(out):
+            try:
+                a, b = os.stat(src), os.stat(out)
+            except OSError:
+                a = b = None
+            if a and a.st_size == b.st_size and int(a.st_mtime) == int(b.st_mtime):
+                res["same"] += 1
+                continue
+            stem, ext = os.path.splitext(out)
+            n = 2
+            while os.path.exists(f"{stem} ({n}){ext}"):
+                n += 1
+            out = f"{stem} ({n}){ext}"
+            res["renamed"] += 1
+        if dry_run:
+            progress(f"  {it['dest']} -> {out}")
+        else:
+            try:
+                os.makedirs(os.path.dirname(out), exist_ok=True)
+                shutil.copy2(src, out + ".part")
+                os.replace(out + ".part", out)
+            except OSError as e:
+                res["errors"] += 1
+                progress(f"  could not copy {it['dest']}: {e.strerror or e}")
+                continue
+        res["copied"] += 1
+        res["bytes"] += it["size"] or 0
+    verb = "Would copy" if dry_run else "Copied"
+    progress(f"{verb} {res['copied']:,} of {total:,} matching files ({res['bytes'] / 1e6:,.1f} MB) to {dest}"
+             + (f"; {res['same']:,} were already there" if res["same"] else "")
+             + (f"; {res['errors']:,} errors" if res["errors"] else "") + ". The library was not changed.")
+    return res

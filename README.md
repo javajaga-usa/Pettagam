@@ -198,6 +198,15 @@ pettagam stats                           # files by type, by year, cameras, top 
 pettagam duplicates --csv dupes.csv      # sets of identical old files, biggest waste first
 ```
 
+To copy a selection somewhere else, for example to share it or put it on a USB stick:
+
+```
+pettagam export ~/Desktop/Beach --tag beach            # keeps the library's folders
+pettagam export ~/Desktop/Tax-2024 --type documents --year 2024 --flat
+```
+
+Export only reads the library. A file that is already there is skipped, and a different file with the same name gets ` (2)` added instead of being replaced.
+
 `find` prints full paths, so `pettagam find --tag invoice | head` works with other tools. `duplicates` only lists files. Nothing is deleted, and only one copy of each set went into the library. The Explore tab in the panel shows the same summary as `stats`.
 
 ## Health check
@@ -227,7 +236,7 @@ pettagam service status
 pettagam service off
 ```
 
-This sorts the inbox in the background, even with the panel closed and after a restart: as soon as something lands in the inbox, and every 5 minutes (`--every SECONDS`) to pick up files that were still being copied. On a Mac it's a LaunchAgent (`~/Library/LaunchAgents/local.pettagam.inbox.plist`); on Ubuntu, a systemd user timer and path watch (`~/.config/systemd/user/pettagam-inbox.*`). What it does is logged in `~/.pettagam/inbox-service.log`. The first time it reaches an external drive, macOS may ask whether Python may access files on a removable volume: allow it. On an Ubuntu server, run `loginctl enable-linger` once so it keeps running when you're logged out.
+This sorts the inbox in the background, even with the panel closed and after a restart: as soon as something lands in the inbox, and every 5 minutes (`--every SECONDS`) to pick up files that were still being copied. On a Mac it's a LaunchAgent (`~/Library/LaunchAgents/local.pettagam.inbox.plist`); on Ubuntu, a systemd user timer and path watch (`~/.config/systemd/user/pettagam-inbox.*`). What it does is logged in `~/.pettagam/inbox-service.log`, and a desktop notification says when files were filed (`--quiet` turns that off; on Ubuntu it uses `notify-send` when there is a desktop). The first time it reaches an external drive, macOS may ask whether Python may access files on a removable volume: allow it. On an Ubuntu server, run `loginctl enable-linger` once so it keeps running when you're logged out.
 
 ## Undo
 

@@ -14,6 +14,8 @@ All notable changes to Pettagam. Versions follow [semantic versioning](https://s
 - **Relocate** (`pettagam relocate --catalog-from ... --source ... --library ...`) for when the drive is mounted somewhere else, such as after the move to Ubuntu.
 - **Setup Pettagam.command** builds a Pettagam app with an icon in `~/Applications` on the Mac itself, so Gatekeeper doesn't block it, with optional AI tagging in a `.venv`. **Uninstall Pettagam.command** removes the app, background job and `.venv`, asks before removing settings, and never touches your files. `launchers/setup-ubuntu.sh` adds a `pettagam` command and menu entry on Ubuntu.
 - **Find** (`pettagam find`), **stats** (`pettagam stats`, and a summary line in Explore library) and **duplicates** (`pettagam duplicates [--csv]`) for the finished library and the old files.
+- **Export** (`pettagam export DEST --tag beach`): copies the files matching a search to another folder, never overwriting.
+- **Notifications**: background inbox sorting shows a desktop notification when files were filed (`service on --quiet` turns it off).
 - **Damage check** (`pettagam fixity [--minutes N]`, and a button in the panel): fingerprints every library file and later tells silent damage (bit rot) apart from edits. Shown in the health check.
 - A release workflow: pushing a `v*` tag tests, builds and publishes a GitHub release from this changelog.
 

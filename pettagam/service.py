@@ -38,9 +38,9 @@ def _paths(platform=None, home=None) -> list:
     return [os.path.join(d, f"{UNIT}.service"), os.path.join(d, f"{UNIT}.timer"), os.path.join(d, f"{UNIT}.path")]
 
 
-def command(db: str, inbox: str, library: str, python: str = None) -> list:
+def command(db: str, inbox: str, library: str, python: str = None, notify: bool = True) -> list:
     return [python or sys.executable, "-m", "pettagam", "--db", os.path.abspath(db), "inbox",
-            os.path.abspath(inbox), "--library", os.path.abspath(library)]
+            os.path.abspath(inbox), "--library", os.path.abspath(library)] + (["--notify"] if notify else [])
 
 
 def _package_root() -> str:
@@ -124,7 +124,7 @@ def _run(runner, args) -> bool:
 
 
 def install(db: str, inbox: str, library: str, every: int = 300, platform=None, home=None,
-            runner=None, python=None) -> dict:
+            runner=None, python=None, notify: bool = True) -> dict:
     """Write and start the background job. Replaces an earlier one."""
     if not os.path.isdir(inbox):
         raise SystemExit(f"Inbox folder not found: {inbox}")
@@ -136,7 +136,7 @@ def install(db: str, inbox: str, library: str, every: int = 300, platform=None, 
     h = _home(home)
     log = os.path.join(h, ".pettagam", "inbox-service.log")
     os.makedirs(os.path.dirname(log), exist_ok=True)
-    cmd = command(db, inbox, library, python)
+    cmd = command(db, inbox, library, python, notify)
     paths = _paths(platform, home)
     os.makedirs(os.path.dirname(paths[0]), exist_ok=True)
     if plat == "mac":
@@ -152,7 +152,7 @@ def install(db: str, inbox: str, library: str, every: int = 300, platform=None, 
         started = _run(runner, ["systemctl", "--user", "daemon-reload"]) and _run(
             runner, ["systemctl", "--user", "enable", "--now", f"{UNIT}.timer", f"{UNIT}.path"])
     state = {"inbox": os.path.abspath(inbox), "library": os.path.abspath(library), "db": os.path.abspath(db),
-             "every": every, "log": log, "started": started}
+             "every": every, "log": log, "started": started, "notify": notify}
     with open(_state_file(home), "w", encoding="utf-8") as f:
         json.dump(state, f, indent=2)
     return state

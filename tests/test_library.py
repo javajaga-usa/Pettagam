@@ -100,3 +100,33 @@ def test_default_db(tmp_path, monkeypatch):
     assert cli.default_db() == "pettagam.db"
     monkeypatch.setenv("PETTAGAM_DB", "/x/y.db")
     assert cli.default_db() == "/x/y.db"
+
+
+def test_export_copies_a_selection_without_overwriting(placed, tmp_path):
+    con, src, lib, dbp = placed
+    out = tmp_path / "share"
+    assert cli.main(["--db", str(dbp), "export", str(out), "--tag", "beach"]) == 0
+    files = [os.path.join(d, f) for d, _, fs in os.walk(out) for f in fs]
+    assert len(files) == 1 and files[0].lower().endswith("img_0001.jpg")
+    assert cli.main(["--db", str(dbp), "export", str(out), "--tag", "beach"]) == 0  # already there: no copy
+    assert len([f for _, _, fs in os.walk(out) for f in fs]) == 1
+    open(files[0], "ab").write(b"edited")  # a different file with the same name is kept, not replaced
+    from pettagam.library import export
+    assert export(con, str(out), tag="beach", progress=quiet)["renamed"] == 1
+    assert export(con, str(tmp_path / "flat"), category="documents", flat=True, progress=quiet)["copied"] == 2
+    assert sorted(os.listdir(tmp_path / "flat")) == ["notes.txt", "report.pdf"]
+    with pytest.raises(SystemExit):
+        cli.main(["--db", str(dbp), "export", str(out)])
+
+
+def test_notifications():
+    from pettagam.notify import inbox_message, notify
+    calls = []
+    runner = lambda args, **kw: calls.append(args) or type("R", (), {"returncode": 0})()
+    assert notify("Pettagam", 'Filed "3" files', platform="darwin", runner=runner)
+    assert calls[-1][0] == "osascript" and '\\"3\\"' in calls[-1][2]
+    assert notify("Pettagam", "x", platform="linux", runner=runner) and calls[-1][0] == "notify-send"
+    assert not notify("Pettagam", "x", platform="win32", runner=runner)
+    assert inbox_message({"placed": 1, "duplicate": 2}) == \
+        "Filed 1 file into the library; 2 were already there (moved to _duplicates)."
+    assert inbox_message({"placed": 0}) == ""

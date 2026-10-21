@@ -17,6 +17,7 @@
   pettagam find WORDS [--tag T]     search the library by name, folder, tags, camera, type or year
   pettagam stats                    what is in the library: by type, year, camera and tag
   pettagam duplicates [--csv F]     list the identical copies found in the old files
+  pettagam export DEST WORDS        copy the files that match a search to another folder
   pettagam fixity [--minutes N]     check the library for silent damage (bit rot)
 
 The catalog is $PETTAGAM_DB if set, else ./pettagam.db if it exists, else the panel's
@@ -105,6 +106,7 @@ def main(argv=None) -> int:
     ib.add_argument("--watch", type=float, metavar="SECONDS", help="keep running, checking every SECONDS")
     ib.add_argument("--settle", type=float, default=10, help="leave files changed in the last N seconds (default 10)")
     ib.add_argument("--dry-run", action="store_true", help="only show where files would go")
+    ib.add_argument("--notify", action="store_true", help="show a desktop notification when files were filed")
 
     vw = sub.add_parser("views", help="rebuild the automatic views under <library>/views/")
     vw.add_argument("--library", help="default: the library from the last dry run")
@@ -128,6 +130,7 @@ def main(argv=None) -> int:
     sv.add_argument("--inbox", help="the inbox folder (needed for 'on')")
     sv.add_argument("--library", help="default: the library from the last dry run")
     sv.add_argument("--every", type=int, default=300, help="also check every N seconds (default 300)")
+    sv.add_argument("--quiet", action="store_true", help="no desktop notification after files are filed")
 
     un = sub.add_parser("undo", help="take placed files back out of the library; the old files are untouched")
     un.add_argument("--dry-run", action="store_true", help="only show what would be removed")
@@ -152,6 +155,15 @@ def main(argv=None) -> int:
     du = sub.add_parser("duplicates", help="list identical copies found in the old files (read-only)")
     du.add_argument("--csv", help="write every group to this CSV file")
     du.add_argument("--top", type=int, default=15, help="groups to show")
+
+    ex = sub.add_parser("export", help="copy the files that match a search to another folder (e.g. to share)")
+    ex.add_argument("dest", help="folder to copy into; it is created if needed")
+    ex.add_argument("words", nargs="*")
+    ex.add_argument("--type")
+    ex.add_argument("--tag")
+    ex.add_argument("--year")
+    ex.add_argument("--flat", action="store_true", help="put every file directly in DEST instead of keeping folders")
+    ex.add_argument("--dry-run", action="store_true")
 
     fx = sub.add_parser("fixity", help="check the library for silent damage")
     fx.add_argument("--minutes", type=float, default=0, help="stop after this long; the next run carries on")
@@ -255,6 +267,11 @@ def _run(con, args) -> int:
         if not sys.stdout.isatty():
             print(time.strftime("%Y-%m-%d %H:%M:%S") + " sorting the inbox")
         res = sort_inbox(con, args.inbox, lib, load_rules(path), settle=args.settle, dry_run=args.dry_run)
+        if args.notify and not args.dry_run and not res.get("busy"):
+            from .notify import inbox_message, notify
+            text = inbox_message(res)
+            if text:
+                notify("Pettagam", text)
         return 1 if res["error"] else 0
     if args.cmd == "views":
         from .views import build_views, write_starter as views_starter
@@ -302,7 +319,7 @@ def _run(con, args) -> int:
             return 0
         if not args.inbox:
             raise SystemExit("Say which folder is the inbox: pettagam service on --inbox FOLDER")
-        st = service.install(args.db, args.inbox, _library(con, args), every=args.every)
+        st = service.install(args.db, args.inbox, _library(con, args), every=args.every, notify=not args.quiet)
         print(service.status()["text"] + ("" if st["started"] else
               " (written, but it could not be started now; it starts at your next login)"))
         print(f"Log: {st['log']}")
@@ -357,6 +374,13 @@ def _run(con, args) -> int:
             write_duplicates_csv(con, args.csv)
             print(f"\nAll groups written to {args.csv}")
         return 0
+    if args.cmd == "export":
+        from .library import export
+        if not (args.words or args.type or args.tag or args.year):
+            raise SystemExit("Say what to export, e.g. pettagam export ~/Desktop/beach --tag beach")
+        res = export(con, args.dest, " ".join(args.words), args.type or "", args.tag or "", args.year or "",
+                     flat=args.flat, dry_run=args.dry_run)
+        return 1 if res["errors"] else 0
     if args.cmd == "fixity":
         from .fixity import check
         res = check(con, args.library, minutes=args.minutes, limit=args.limit)
