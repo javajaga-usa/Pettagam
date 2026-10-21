@@ -7,6 +7,7 @@ from collections import defaultdict
 
 from . import classify as cl
 from .db import get_meta, set_meta
+from .rules import facts, first_match
 
 BAD_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')  # not allowed by Windows/Samba clients
 SPLIT_AT = 5000
@@ -28,6 +29,16 @@ def folder_for(r: cl.Result, ext: str) -> str:
     if r.category == "other":
         return f"other/{r.subtype}"
     return f"{r.category}/{r.subtype}" if r.subtype else r.category
+
+
+def decide(row, rules=(), now=None):
+    """(classification, folder, rule name) for one catalog row. Your rules win over the smart types."""
+    r = cl.classify(row["name"], row["ext"], row["size"], row["width"], row["height"],
+                    row["camera"], bool(row["has_exif"]), bool(row["has_tags"]))
+    rule, folder = first_match(rules, facts(row, r.category, r.subtype, r.confidence), now)
+    if rule:
+        return r, folder, rule.name
+    return r, folder_for(r, row["ext"]), None
 
 
 def _dedupe_names(names):
@@ -83,7 +94,7 @@ def _split(names, split_at, depth=0):
     return out
 
 
-def plan(con, library: str, split_at: int = SPLIT_AT, progress=print) -> dict:
+def plan(con, library: str, split_at: int = SPLIT_AT, rules=(), progress=print) -> dict:
     source = get_meta(con, "source")
     library = os.path.abspath(library)
     src = os.path.abspath(source) + os.sep
@@ -93,18 +104,20 @@ def plan(con, library: str, split_at: int = SPLIT_AT, progress=print) -> dict:
     set_meta(con, "library", library)
     set_meta(con, "split_at", split_at)
 
-    con.execute("UPDATE files SET action='skip', dest=NULL, category=NULL, subtype=NULL WHERE junk IS NOT NULL")
+    con.execute("UPDATE files SET action='skip', dest=NULL, category=NULL, subtype=NULL, rule=NULL WHERE junk IS NOT NULL")
     con.execute("UPDATE files SET action='duplicate', dest=NULL WHERE junk IS NULL AND dup_of IS NOT NULL")
 
     folders = defaultdict(list)  # folder -> [(id, name)]
     rows = con.execute(
         "SELECT * FROM files WHERE junk IS NULL AND dup_of IS NULL ORDER BY path").fetchall()
+    by_rule = defaultdict(int)
     for row in rows:
-        r = cl.classify(row["name"], row["ext"], row["size"], row["width"], row["height"],
-                        row["camera"], bool(row["has_exif"]), bool(row["has_tags"]))
-        con.execute("UPDATE files SET category=?, subtype=?, confidence=?, reason=? WHERE id=?",
-                    (r.category, r.subtype, r.confidence, r.reason, row["id"]))
-        folders[folder_for(r, row["ext"])].append((row["id"], safe_name(row["name"], row["ext"])))
+        r, folder, rule = decide(row, rules)
+        con.execute("UPDATE files SET category=?, subtype=?, confidence=?, reason=?, rule=? WHERE id=?",
+                    (r.category, r.subtype, r.confidence, r.reason, rule, row["id"]))
+        folders[folder].append((row["id"], safe_name(row["name"], row["ext"])))
+        if rule:
+            by_rule[rule] += 1
 
     for folder, items in folders.items():
         names = _dedupe_names([n for _, n in items])
@@ -116,10 +129,13 @@ def plan(con, library: str, split_at: int = SPLIT_AT, progress=print) -> dict:
 
     # Duplicates inherit the classification of their canonical copy, for reports.
     con.execute("""UPDATE files SET category=(SELECT c.category FROM files c WHERE c.id=files.dup_of),
-                                     subtype=(SELECT c.subtype FROM files c WHERE c.id=files.dup_of)
+                                     subtype=(SELECT c.subtype FROM files c WHERE c.id=files.dup_of),
+                                     rule=(SELECT c.rule FROM files c WHERE c.id=files.dup_of)
                    WHERE action='duplicate'""")
     con.commit()
     counts = dict(con.execute("SELECT action, COUNT(*) FROM files GROUP BY action").fetchall())
     progress(f"Planned {counts.get('place', 0):,} placements, {counts.get('duplicate', 0):,} duplicates, "
              f"{counts.get('skip', 0):,} junk files skipped, into {len(folders):,} folders")
+    for name, n in sorted(by_rule.items(), key=lambda kv: -kv[1]):
+        progress(f"  your rule '{name}': {n:,} files")
     return counts

@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pettagam</title>
+<link rel="icon" href="data:,">
 <style>
 :root {
   --bg: #f6f5f2; --card: #ffffff; --ink: #1d1d1f; --muted: #6b6b70; --line: #e4e2dc;
@@ -18,6 +19,7 @@
   }
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { margin: 0; background: var(--bg); color: var(--ink);
   font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans Tamil", sans-serif; }
 header { padding: 20px 24px 8px; max-width: 1100px; margin: 0 auto; display: flex; align-items: baseline; gap: 12px; }
@@ -72,7 +74,30 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .dlg-list div { padding: 8px 16px; cursor: pointer; border-bottom: 1px solid var(--line); }
 .dlg-list div:hover { background: var(--chip); }
 .dlg-foot { padding: 12px 16px; display: flex; gap: 10px; justify-content: flex-end; }
+nav.tabs { max-width: 1100px; margin: 0 auto; padding: 0 24px; display: flex; gap: 6px; }
+nav.tabs button { border-radius: 999px; }
+nav.tabs button[aria-selected="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+.tile { background: var(--chip); border-radius: 10px; overflow: hidden; cursor: pointer; border: 1px solid var(--line);
+  display: flex; flex-direction: column; min-width: 0; }
+.tile:hover { border-color: var(--accent); }
+.thumb { aspect-ratio: 4 / 3; background: var(--bar); display: grid; place-items: center; overflow: hidden; }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb .ext { font: 600 18px ui-monospace, Menlo, monospace; color: var(--muted); text-transform: uppercase; }
+.tile .meta { padding: 8px 10px; font-size: 12.5px; }
+.tile .meta b { display: block; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.chip { font-size: 11.5px; padding: 1px 7px; border-radius: 10px; background: var(--card); color: var(--muted); cursor: pointer;
+  border: 1px solid var(--line); }
+.chip:hover { color: var(--accent); }
+.tagcloud { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 12px; }
+.preview { max-height: 60vh; display: grid; place-items: center; background: var(--code); }
+.preview img, .preview video { max-width: 100%; max-height: 60vh; display: block; }
+.preview iframe { width: 100%; height: 60vh; border: 0; background: #fff; }
+dl.info { display: grid; grid-template-columns: 110px 1fr; gap: 6px 12px; margin: 0; padding: 14px 16px; font-size: 14px; }
+dl.info dt { color: var(--muted); } dl.info dd { margin: 0; word-break: break-all; }
 @media (max-width: 640px) {
+  nav.tabs { padding: 0 16px; }
   header, main { padding-left: 16px; padding-right: 16px; }
   .row { grid-template-columns: 1fr; }
 }
@@ -83,7 +108,11 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
   <h1>Pettagam</h1><span class="ta">பெட்டகம்</span>
   <span class="status" id="status">Loading…</span>
 </header>
-<main>
+<nav class="tabs" role="tablist">
+  <button role="tab" data-tab="organize" aria-selected="true">Organize</button>
+  <button role="tab" data-tab="explore" aria-selected="false">Explore library</button>
+</nav>
+<main id="tab-organize">
   <section class="card">
     <h2><span class="num">1</span>Choose folders</h2>
     <p class="hint">Your old files are only ever read. Put the library on the same drive as the old files so placement is instant and uses no extra space.</p>
@@ -120,10 +149,46 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <button class="primary" id="btn-apply">Place files</button>
       <button id="btn-verify">Check everything is in sync</button>
     </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="num">4</span>Keep it tidy</h2>
+    <p class="hint">Drop new files into an inbox folder and Pettagam files them into the library by your rules and the smart types. Exact copies of files already in the library go to <code>_duplicates</code> in the inbox; nothing is deleted.</p>
+    <div class="row"><b>Inbox</b><div class="path" id="inbox"></div><button data-pick="inbox">Choose…</button></div>
+    <div class="actions">
+      <button class="primary" id="btn-inbox">Sort the inbox now</button>
+      <button id="btn-views">Rebuild views</button>
+      <button id="btn-tag">Add AI tags…</button>
+    </div>
+    <p class="hint" style="margin:10px 0 0">Your rules live in <code>_meta/rules.json</code> in the library (create a starter one with <code>pettagam rules --init</code>). Views are folders of shortcuts under <code>views/</code>: by year, by camera, recent, large files and by tag. AI tags need an Anthropic API key and cost a little per file.</p>
+  </section>
+
+  <section class="card" id="activity">
+    <h2>Activity</h2>
     <div class="msg" id="result"></div>
     <div class="log" id="log" hidden></div>
   </section>
 </main>
+
+<main id="tab-explore" hidden>
+  <section class="card">
+    <div class="tools">
+      <input id="ex-q" placeholder="Search names, folders, tags and descriptions, for example beach 2019">
+      <select id="ex-cat"><option value="">All kinds</option></select>
+      <select id="ex-year"><option value="">Any year</option></select>
+    </div>
+    <div class="tagcloud" id="ex-tags"></div>
+    <p class="hint" id="ex-count"></p>
+    <div class="grid" id="ex-grid"></div>
+    <div class="actions" style="margin-top:14px"><button id="ex-more" hidden>Show more</button></div>
+  </section>
+</main>
+
+<dialog id="detail">
+  <div class="preview" id="dt-preview"></div>
+  <dl class="info" id="dt-info"></dl>
+  <div class="dlg-foot"><a id="dt-open" target="_blank" rel="noopener"><button>Open</button></a><button id="dt-close" class="primary">Close</button></div>
+</dialog>
 
 <dialog id="picker">
   <div class="dlg-head"><b id="pick-title">Choose a folder</b><div class="path" id="pick-path" style="margin-top:8px"></div></div>
@@ -161,7 +226,11 @@ function render() {
   setPath("source", settings.source);
   setPath("library", settings.library);
   const busy = job.running;
-  $("status").textContent = busy ? `Running: ${({ dryrun: "dry run", apply: "placing files", verify: "sync check" })[job.name]}…` : "Ready";
+  $("status").textContent = busy ? `Running: ${({ dryrun: "dry run", apply: "placing files", verify: "sync check", inbox: "sorting the inbox", views: "building views", tag: "AI tagging" })[job.name]}…` : "Ready";
+  setPath("inbox", settings.inbox);
+  $("btn-inbox").disabled = busy || !settings.inbox || !settings.library;
+  $("btn-views").disabled = busy || !summary.planned;
+  $("btn-tag").disabled = busy || !summary.planned;
   $("btn-dryrun").disabled = busy || !settings.source || !settings.library;
   $("btn-apply").disabled = busy || !summary.planned;
   $("btn-verify").disabled = busy || !summary.planned;
@@ -196,6 +265,7 @@ function render() {
 
 function showResult(job) {
   const el = $("result"), r = job.result || {};
+  facetsLoaded = false;
   el.className = "msg";
   if (r.error) { el.classList.add("bad"); el.textContent = r.error; return; }
   if (job.name === "verify") {
@@ -207,6 +277,16 @@ function showResult(job) {
   } else if (job.name === "apply") {
     el.classList.add(r.errors ? "warn" : "ok");
     el.textContent = `Placed ${fmtN(r.done)} files by ${r.method === "link" ? "hardlink" : "copy"}` + (r.errors ? `, ${fmtN(r.errors)} errors (see the log).` : ". Next: check everything is in sync.");
+  } else if (job.name === "inbox") {
+    el.classList.add(r.error ? "warn" : "ok");
+    el.textContent = `Filed ${fmtN(r.placed)} files; ${fmtN(r.duplicate)} were already in the library` +
+      (r.waiting ? `; ${fmtN(r.waiting)} are still being copied and will be filed next time` : "") + (r.error ? `; ${fmtN(r.error)} errors (see the log).` : ".");
+  } else if (job.name === "views") {
+    el.classList.add("ok");
+    el.textContent = "Views rebuilt: " + Object.entries(r).map(([k, v]) => `${k} ${fmtN(v)}`).join(", ") + ". Open the views folder in the library to browse them.";
+  } else if (job.name === "tag") {
+    el.classList.add(r.errors ? "warn" : "ok");
+    el.textContent = `Tagged ${fmtN(r.tagged)} files` + (r.skipped ? `, skipped ${fmtN(r.skipped)}` : "") + (r.errors ? `, ${fmtN(r.errors)} errors (see the log).` : ". Search them in Explore library.");
   } else if (job.name === "dryrun") {
     el.classList.add("ok");
     el.textContent = "Dry run finished. Review the folders above, then place the files.";
@@ -234,6 +314,13 @@ async function run(action) {
 $("btn-dryrun").onclick = () => run("dryrun");
 $("btn-apply").onclick = () => run("apply");
 $("btn-verify").onclick = () => run("verify");
+$("btn-inbox").onclick = () => run("inbox");
+$("btn-views").onclick = () => run("views");
+$("btn-tag").onclick = async () => {
+  const e = await api("/api/estimate");
+  if (!e.files) { $("result").className = "msg ok"; $("result").textContent = "Every photo and document already has tags."; return; }
+  if (confirm(`Send ${fmtN(e.files)} photos and documents to Claude for tags? This needs an Anthropic API key and costs roughly $${e.usd.toFixed(2)}. You can stop the panel at any time; finished files keep their tags.`)) run("tag");
+};
 
 function md(text) {
   const inline = (s) => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
@@ -263,7 +350,7 @@ async function loadPlan() {
   const tag = (r) => r.action === "duplicate" ? `<span class="tag dup">duplicate</span>` : r.action === "skip" ? `<span class="tag">junk: ${esc(r.junk)}</span>`
     : (r.folder || "").startsWith("review/") ? `<span class="tag review">review</span>` : r.status === "done" ? `<span class="tag">placed</span>` : "";
   $("plan").innerHTML = `<tr><th>Old location</th><th>New location</th><th>Why</th></tr>` + (rows.length ? rows.map((r) =>
-    `<tr><td class="mono">${esc(r.path)}</td><td class="mono">${esc(r.dest || "—")} ${tag(r)}</td><td>${esc(r.reason || "")}</td></tr>`).join("")
+    `<tr><td class="mono">${esc(r.path)}</td><td class="mono">${esc(r.dest || "—")} ${tag(r)}</td><td>${esc(r.rule ? `your rule “${r.rule}”` : r.reason || "")}</td></tr>`).join("")
     : `<tr><td colspan="3" class="hint">No matching files.</td></tr>`) + (rows.length === 200 ? `<tr><td colspan="3" class="hint">Showing the first 200; search to narrow it down.</td></tr>` : "");
 }
 $("q").oninput = () => { clearTimeout(planTimer); planTimer = setTimeout(loadPlan, 250); };
@@ -291,12 +378,79 @@ $("pick-ok").onclick = async () => {
 };
 document.querySelectorAll("[data-pick]").forEach((b) => b.onclick = () => {
   pickFor = b.dataset.pick;
-  $("pick-title").textContent = pickFor === "source" ? "Choose the folder with your old files" : "Choose (or create) the folder for the new library";
+  $("pick-title").textContent = ({ source: "Choose the folder with your old files", library: "Choose (or create) the folder for the new library", inbox: "Choose the inbox folder for new files" })[pickFor];
   const cur = state?.settings?.[pickFor];
   $("pick-new").hidden = pickFor !== "library";
   $("picker").showModal();
   openDir(cur ? (pickFor === "library" ? cur.replace(/[\/\\][^\/\\]+[\/\\]?$/, "") || cur : cur) : "");
 });
+
+// --- Explore library ---------------------------------------------------
+const IMG = /\.(jpe?g|png|gif|webp|avif|heic|bmp|svg)$/i, VID = /\.(mp4|m4v|mov|webm)$/i;
+let exOffset = 0, exTimer, facetsLoaded = false;
+const fileUrl = (p) => `/api/file?path=${encodeURIComponent(p)}`;
+const dateOf = (r) => new Date(1000 * (r.taken || r.mtime));
+const tagsOf = (r) => (r.tags || "").split(",").filter(Boolean);
+
+function showTab(name) {
+  document.querySelectorAll("[data-tab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
+  $("tab-organize").hidden = name !== "organize";
+  $("tab-explore").hidden = name !== "explore";
+  if (name === "explore") { loadFacets(); loadExplore(true); }
+  try { localStorage.setItem("pettagam-tab", name); } catch (e) {}
+}
+document.querySelectorAll("[data-tab]").forEach((b) => b.onclick = () => showTab(b.dataset.tab));
+
+async function loadFacets() {
+  if (facetsLoaded) return;
+  const f = await api("/api/facets");
+  facetsLoaded = true;
+  $("ex-cat").innerHTML = `<option value="">All kinds</option>` + f.categories.map(([c, n]) => `<option value="${esc(c)}">${esc(c)} (${fmtN(n)})</option>`).join("");
+  $("ex-year").innerHTML = `<option value="">Any year</option>` + f.years.filter(Boolean).map((y) => `<option>${esc(y)}</option>`).join("");
+  $("ex-tags").innerHTML = f.tags.slice(0, 40).map(([t, n]) => `<span class="chip" data-tag="${esc(t)}">${esc(t)} · ${fmtN(n)}</span>`).join("");
+}
+
+let exTag = "", exItems = [];
+async function loadExplore(reset) {
+  if (reset) { exOffset = 0; exItems = []; }
+  const qs = new URLSearchParams({ q: $("ex-q").value, category: $("ex-cat").value, year: $("ex-year").value, tag: exTag, offset: exOffset });
+  const d = await api(`/api/explore?${qs}`);
+  const html = d.items.map((r) => {
+    const i = exItems.push(r) - 1;
+    const thumb = IMG.test(r.dest) ? `<img loading="lazy" src="${fileUrl(r.dest)}" alt="">` : `<span class="ext">${esc((r.dest.split(".").pop() || "file").slice(0, 5))}</span>`;
+    return `<div class="tile" data-item="${i}"><div class="thumb">${thumb}</div><div class="meta"><b title="${esc(r.dest)}">${esc(r.name)}</b>` +
+      `<span class="hint">${dateOf(r).toLocaleDateString()} · ${fmtB(r.size)}</span>` +
+      `<div class="chips">${tagsOf(r).slice(0, 4).map((t) => `<span class="chip" data-tag="${esc(t)}">${esc(t)}</span>`).join("")}</div></div></div>`;
+  }).join("");
+  if (reset) $("ex-grid").innerHTML = html; else $("ex-grid").insertAdjacentHTML("beforeend", html);
+  exOffset += d.items.length;
+  $("ex-count").textContent = d.total ? `${fmtN(d.total)} files` + (exTag ? ` tagged “${exTag}”` : "") + (exTag ? " · click the tag again to clear" : "") : "No files match. Place files first, or try other words.";
+  $("ex-more").hidden = exOffset >= d.total;
+}
+$("ex-q").oninput = () => { clearTimeout(exTimer); exTimer = setTimeout(() => loadExplore(true), 250); };
+$("ex-cat").onchange = $("ex-year").onchange = () => loadExplore(true);
+$("ex-more").onclick = () => loadExplore(false);
+document.addEventListener("click", (e) => {
+  const chip = e.target.closest("[data-tag]");
+  if (chip) { e.stopPropagation(); exTag = exTag === chip.dataset.tag ? "" : chip.dataset.tag; if ($("detail").open) $("detail").close(); showTab("explore"); return; }
+  const tile = e.target.closest("[data-item]");
+  if (tile) openDetail(exItems[+tile.dataset.item]);
+}, true);
+
+function openDetail(r) {
+  const url = fileUrl(r.dest);
+  $("dt-preview").innerHTML = IMG.test(r.dest) ? `<img src="${url}" alt="">` : VID.test(r.dest) ? `<video src="${url}" controls preload="metadata"></video>`
+    : /\.pdf$/i.test(r.dest) ? `<iframe src="${url}" title="Preview"></iframe>` : `<p class="hint" style="padding:30px">No preview for this kind of file. Use Open.</p>`;
+  const rows = [["Library", r.dest], ["Was", r.original], ["Date", dateOf(r).toLocaleString() + (r.taken ? " (taken)" : " (last changed)")],
+    ["Size", fmtB(r.size)], ["Kind", [r.category, r.subtype].filter(Boolean).join(" / ")], ["Camera", r.camera], ["Your rule", r.rule],
+    ["Description", r.description], ["Tags", tagsOf(r).map((t) => `<span class="chip" data-tag="${esc(t)}">${esc(t)}</span>`).join(" ")]];
+  $("dt-info").innerHTML = rows.filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${k === "Tags" ? v : esc(v)}</dd>`).join("");
+  $("dt-open").href = url;
+  $("detail").showModal();
+}
+$("dt-close").onclick = () => $("detail").close();
+
+try { if (localStorage.getItem("pettagam-tab") === "explore") showTab("explore"); } catch (e) {}
 
 refresh().then(() => { if (state?.summary?.planned) { loadReport(); loadPlan(); } });
 </script>

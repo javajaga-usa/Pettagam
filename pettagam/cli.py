@@ -5,20 +5,26 @@
   pettagam apply                    hardlink or copy files into the library
   pettagam verify [--rescan]        check everything is in sync
   pettagam dryrun SOURCE --library LIB   scan + plan + report in one go (changes nothing)
-  pettagam panel                    open the point-and-click panel in your browser
+  pettagam panel                    open the point-and-click panel (and library explorer) in your browser
+  pettagam rules [--init]           check your placement rules and see what they match
+  pettagam inbox INBOX [--watch N]  file new files from an inbox folder into the library
+  pettagam views [--init]           rebuild the automatic views (by year, by camera, ...) as hardlinks
+  pettagam tag                      add AI tags and descriptions to photos and documents (optional, paid)
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 
 from . import __version__
 from .apply import apply
-from .db import connect
+from .db import connect, get_meta
 from .hashing import find_duplicates
-from .plan import SPLIT_AT, plan
+from .plan import SPLIT_AT, decide, plan
 from .report import report
+from .rules import RuleError, default_path, load_rules, write_starter
 from .scan import scan
 from .verify import verify
 
@@ -38,6 +44,7 @@ def main(argv=None) -> int:
     pl.add_argument("--library", required=True)
     pl.add_argument("--split-at", type=int, default=SPLIT_AT, help="files per folder before it splits")
     pl.add_argument("--out", default="pettagam-report")
+    pl.add_argument("--rules", help="your rules file (default: <library>/_meta/rules.json)")
 
     d = sub.add_parser("dryrun", help="scan + plan + report; changes nothing on disk")
     d.add_argument("source")
@@ -45,6 +52,7 @@ def main(argv=None) -> int:
     d.add_argument("--workers", type=int, default=2)
     d.add_argument("--split-at", type=int, default=SPLIT_AT)
     d.add_argument("--out", default="pettagam-report")
+    d.add_argument("--rules", help="your rules file (default: <library>/_meta/rules.json)")
 
     a = sub.add_parser("apply", help="place files into the library (source is never modified)")
     a.add_argument("--workers", type=int, default=4, help="parallel copies; 2-4 for hard drives")
@@ -62,19 +70,65 @@ def main(argv=None) -> int:
                     help="127.0.0.1 = this computer only; 0.0.0.0 = reachable from your network")
     pn.add_argument("--no-browser", action="store_true", help="do not open a browser window")
 
+    r = sub.add_parser("rules", help="check your placement rules and count what each one matches")
+    r.add_argument("--library", help="default: the library from the last dry run")
+    r.add_argument("--rules", help="default: <library>/_meta/rules.json")
+    r.add_argument("--init", action="store_true", help="create a starter rules file with examples switched off")
+
+    ib = sub.add_parser("inbox", help="file new files from an inbox folder into the library")
+    ib.add_argument("inbox")
+    ib.add_argument("--library", help="default: the library from the last dry run")
+    ib.add_argument("--rules", help="default: <library>/_meta/rules.json")
+    ib.add_argument("--watch", type=float, metavar="SECONDS", help="keep running, checking every SECONDS")
+    ib.add_argument("--settle", type=float, default=10, help="leave files changed in the last N seconds (default 10)")
+    ib.add_argument("--dry-run", action="store_true", help="only show where files would go")
+
+    vw = sub.add_parser("views", help="rebuild the automatic views under <library>/views/")
+    vw.add_argument("--library", help="default: the library from the last dry run")
+    vw.add_argument("--init", action="store_true", help="write the built-in views to _meta/views.json to edit them")
+
+    tg = sub.add_parser("tag", help="add AI tags and descriptions to photos and documents (needs an API key)")
+    tg.add_argument("--model", default=None, help="Claude model (default: claude-opus-5-5)")
+    tg.add_argument("--limit", type=int, default=0, help="tag at most this many files this run")
+    tg.add_argument("--only", help="only files under this library folder, e.g. images/photos")
+    tg.add_argument("--retag", action="store_true", help="also redo files that already have tags")
+    tg.add_argument("--workers", type=int, default=4)
+    tg.add_argument("--yes", action="store_true", help="do not ask for confirmation")
+
     args = p.parse_args(argv)
     if args.cmd == "panel":
         from .panel import serve
         serve(args.host, args.port, open_browser=not args.no_browser)
         return 0
     con = connect(args.db)
+    try:
+        return _run(con, args)
+    except RuleError as e:
+        print(f"Problem in your rules: {e}", file=sys.stderr)
+        return 3
 
+
+def _library(con, args) -> str:
+    lib = getattr(args, "library", None) or get_meta(con, "library")
+    if not lib:
+        raise SystemExit("Say where the library is with --library (or run a dry run first).")
+    return lib
+
+
+def _rules_path(con, args):
+    return getattr(args, "rules", None) or default_path(getattr(args, "library", None) or get_meta(con, "library"))
+
+
+def _run(con, args) -> int:
     if args.cmd in ("scan", "dryrun"):
         scan(con, args.source, workers=args.workers)
         if not getattr(args, "no_dupes", False):
             find_duplicates(con, workers=args.workers)
     if args.cmd in ("plan", "dryrun"):
-        plan(con, args.library, split_at=args.split_at)
+        rules = load_rules(args.rules or default_path(args.library))
+        if rules:
+            print(f"Using {len(rules)} of your rules")
+        plan(con, args.library, split_at=args.split_at, rules=rules)
         report(con, args.out)
     if args.cmd == "apply":
         n = con.execute("SELECT COUNT(*) FROM files WHERE action='place' AND (status IS NULL OR status='error')").fetchone()[0]
@@ -92,6 +146,60 @@ def main(argv=None) -> int:
             with open(args.json, "w", encoding="utf-8") as f:
                 json.dump(res, f, indent=2)
         return 0 if res["ok"] else 2
+    if args.cmd == "rules":
+        path = _rules_path(con, args)
+        if not path:
+            raise SystemExit("Say where the library is with --library, or give the file with --rules.")
+        if args.init:
+            print(("Created " if write_starter(path) else "Already exists: ") + path)
+            print("Open it in a text editor, change the examples, and remove \"off\": true to switch one on.")
+            return 0
+        if not os.path.exists(path):
+            print(f"No rules file yet at {path}. Create a starter one with: pettagam rules --init")
+            return 0
+        rules = load_rules(path)
+        print(f"{path}: {len(rules)} rules switched on, all valid")
+        counts = {rl.name: 0 for rl in rules}
+        for row in con.execute("SELECT * FROM files WHERE junk IS NULL AND dup_of IS NULL"):
+            _, _, name = decide(row, rules)
+            if name:
+                counts[name] += 1
+        for rl in rules:
+            print(f"  {rl.name}: {counts[rl.name]:,} files -> {rl.then}/")
+        return 0
+    if args.cmd == "inbox":
+        from .inbox import sort_inbox, watch
+        lib = _library(con, args)
+        path = _rules_path(con, args)
+        if args.watch:
+            watch(con, args.inbox, lib, path, every=args.watch, settle=args.settle, load=load_rules)
+            return 0
+        res = sort_inbox(con, args.inbox, lib, load_rules(path), settle=args.settle, dry_run=args.dry_run)
+        return 1 if res["error"] else 0
+    if args.cmd == "views":
+        from .views import build_views, write_starter as views_starter
+        lib = _library(con, args)
+        if args.init:
+            print("Views file: " + views_starter(lib))
+            return 0
+        build_views(con, lib)
+        return 0
+    if args.cmd == "tag":
+        from .tag import MODEL, estimate, tag_library
+        est = estimate(con, args.retag, args.only)
+        n = min(est["files"], args.limit) if args.limit else est["files"]
+        if not n:
+            print("Nothing to tag: every photo and document already has tags.")
+            return 0
+        model = args.model or MODEL
+        cost = est["usd"] * n / est["files"]
+        note = f" (roughly ${cost:,.2f} on {MODEL})" if model == MODEL else ""
+        if not args.yes and input(f"Send {n:,} files to Claude ({model}) for tagging{note}? [y/N] ").lower() != "y":
+            print("Cancelled.")
+            return 1
+        res = tag_library(con, _library(con, args), workers=args.workers, limit=args.limit,
+                          retag=args.retag, only=args.only, model=model)
+        return 1 if res["errors"] else 0
     return 0
 
 

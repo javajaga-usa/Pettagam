@@ -97,3 +97,43 @@ def test_network_mode_needs_token(server, monkeypatch):
     assert e.value.code == 403
     assert "settings" in call(base, "/api/state?token=secret123")
     assert "settings" in call(base, "/api/state", headers={"Cookie": "pettagam=secret123"})
+
+
+def test_explore_inbox_and_files(server):
+    base, tmp = server
+    src, inbox = tmp / "old", tmp / "inbox"
+    write(str(src), "Trip/IMG_0001.JPG", jpeg("Apple", "iPhone 12"))
+    write(str(src), "docs/Invoice_1.pdf", b"%PDF-1.7 hello")
+    call(base, "/api/settings", {"source": str(src), "library": str(tmp / "lib"), "inbox": str(inbox)})
+    call(base, "/api/run", {"action": "dryrun"})
+    wait_job(base)
+    call(base, "/api/run", {"action": "apply"})
+    wait_job(base)
+
+    d = call(base, "/api/explore?q=invoice")
+    assert d["total"] == 1 and d["items"][0]["dest"] == "documents/invoices/Invoice_1.pdf"
+    assert d["items"][0]["original"] == os.path.join("docs", "Invoice_1.pdf")
+    assert call(base, "/api/explore?category=images")["total"] == 1
+    f = call(base, "/api/facets")
+    assert ["documents", 1] in f["categories"] and f["years"]
+    assert call(base, "/api/file?path=documents/invoices/Invoice_1.pdf") == "%PDF-1.7 hello"
+    for bad in ("../old/docs/Invoice_1.pdf", "/etc/passwd", "documents"):
+        with pytest.raises(urllib.error.HTTPError) as e:
+            call(base, "/api/file?path=" + bad)
+        assert e.value.code == 404
+    req = urllib.request.Request(base + "/api/file?path=documents/invoices/Invoice_1.pdf", headers={"Range": "bytes=2-4"})
+    with urllib.request.urlopen(req) as r:
+        assert r.status == 206 and r.read() == b"DF-"
+
+    # Inbox needs a real folder; then new files are filed and show up in Explore.
+    with pytest.raises(urllib.error.HTTPError):
+        call(base, "/api/run", {"action": "inbox"})
+    p = write(str(inbox), "Receipt_42.pdf", b"%PDF-1.7 receipt")
+    os.utime(p, (time.time() - 60, time.time() - 60))
+    call(base, "/api/run", {"action": "inbox"})
+    st = wait_job(base)
+    assert st["job"]["result"]["placed"] == 1, st["job"]
+    assert call(base, "/api/explore?q=receipt")["items"][0]["dest"] == "documents/receipts/Receipt_42.pdf"
+    call(base, "/api/run", {"action": "views"})
+    assert wait_job(base)["job"]["result"]["Recent"] == 3
+    assert call(base, "/api/estimate")["files"] == 3

@@ -5,7 +5,6 @@ import csv
 import os
 import posixpath
 
-from .classify import REVIEW_BELOW
 from .db import get_meta
 
 
@@ -15,7 +14,8 @@ def _gb(n) -> str:
 
 
 def write_plan_csv(con, path: str) -> None:
-    cols = ["path", "dest", "action", "category", "subtype", "confidence", "reason", "size", "junk", "dup_of_path"]
+    cols = ["path", "dest", "action", "category", "subtype", "confidence", "reason", "rule", "size", "junk",
+            "dup_of_path"]
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(cols)
@@ -44,6 +44,12 @@ def report(con, out_dir: str, progress=print) -> str:
         split = f" (split into {r['parts']} subfolders)" if r["parts"] > 1 else ""
         lines.append(f"| `{r['folder']}/`{split} | {r['n']:,} | {_gb(r['b'])} |")
 
+    ruled = q("SELECT rule, COUNT(*) AS n, SUM(size) AS b FROM files WHERE action='place' AND rule IS NOT NULL "
+              "GROUP BY rule ORDER BY n DESC")
+    if ruled:
+        lines += ["", "## Your rules", "", "| Rule | Files | Size |", "| --- | ---: | ---: |"]
+        lines += [f"| {r['rule']} | {r['n']:,} | {_gb(r['b'])} |" for r in ruled]
+
     dup_n, dup_b = q("SELECT COUNT(*), SUM(size) FROM files WHERE action='duplicate'")[0]
     junk = q("SELECT junk, COUNT(*) AS n, SUM(size) AS b FROM files WHERE action='skip' GROUP BY junk ORDER BY n DESC")
     lines += ["", "## Duplicates", "",
@@ -56,8 +62,8 @@ def report(con, out_dir: str, progress=print) -> str:
     lines += ["", "## Skipped as junk", ""]
     lines += [f"- {r['junk']}: {r['n']:,} files ({_gb(r['b'])})" for r in junk] or ["- none"]
 
-    review = q("SELECT reason, COUNT(*) AS n FROM files WHERE action='place' AND confidence < ? "
-               "AND category != 'other' GROUP BY reason ORDER BY n DESC", REVIEW_BELOW)
+    review = q("SELECT reason, COUNT(*) AS n FROM files WHERE action='place' AND folder LIKE 'review/%' "
+               "GROUP BY reason ORDER BY n DESC")
     lines += ["", "## Needs review", "",
               f"{sum(r['n'] for r in review):,} files had weak clues and go to `review/` instead of being guessed.", ""]
     lines += [f"- {r['reason']}: {r['n']:,}" for r in review]

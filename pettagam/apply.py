@@ -75,7 +75,7 @@ def write_manifest(con, library: str) -> str:
     os.makedirs(meta, exist_ok=True)
     path = os.path.join(meta, "manifest.csv")
     cols = ["path", "dest", "action", "status", "method", "category", "subtype", "confidence",
-            "reason", "size", "mtime", "full_hash", "dup_of_path", "junk", "error"]
+            "reason", "rule", "tags", "size", "mtime", "full_hash", "dup_of_path", "junk", "error"]
     with open(path + ".tmp", "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(cols)
