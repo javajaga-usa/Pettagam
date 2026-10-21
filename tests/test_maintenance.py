@@ -63,10 +63,14 @@ def test_service_mac_launch_agent(tmp_path):
     assert data["WatchPaths"] == [str(inbox)]
     assert data["StartInterval"] == 120 and os.path.isdir(data["EnvironmentVariables"]["PYTHONPATH"])
     assert fake.calls[-1][:2] == ["launchctl", "bootstrap"] and st["started"]
+    weekly = plistlib.loads((plist.parent / f"{service.FIXITY_LABEL}.plist").read_bytes())
+    assert weekly["ProgramArguments"][-6:] == ["fixity", "--library", str(tmp_path / "lib"), "--minutes", "30", "--notify"]
+    assert weekly["StartCalendarInterval"] == {"Weekday": 0, "Hour": 3, "Minute": 0} and "WatchPaths" not in weekly
     s = service.status(platform="darwin", home=str(home))
     assert s["installed"] and "2 minutes" in s["text"]
     assert service.uninstall(platform="darwin", home=str(home), runner=fake)
     assert not plist.exists() and fake.calls[-1][:2] == ["launchctl", "bootout"]
+    assert not list(plist.parent.iterdir())
     assert not service.status(platform="darwin", home=str(home))["installed"]
 
 
@@ -81,7 +85,11 @@ def test_service_linux_systemd_units(tmp_path):
     assert f'"{inbox}"' in svc and "StandardOutput=append:" in svc
     assert "OnUnitActiveSec=60" in (units / "pettagam-inbox.timer").read_text()  # at least a minute
     assert f"PathChanged={inbox}" in (units / "pettagam-inbox.path").read_text()
-    assert ["systemctl", "--user", "enable", "--now", "pettagam-inbox.timer", "pettagam-inbox.path"] in fake.calls
+    assert ["systemctl", "--user", "enable", "--now", "pettagam-inbox.timer", "pettagam-inbox.path",
+            "pettagam-fixity.timer"] in fake.calls
+    fx = (units / "pettagam-fixity.service").read_text()
+    assert " fixity --library " in fx and "--minutes 30 --notify" in fx
+    assert "OnCalendar=Sun" in (units / "pettagam-fixity.timer").read_text()
     service.uninstall(platform="linux", home=str(home), runner=fake)
     assert not list(units.iterdir())
 

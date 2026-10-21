@@ -16,7 +16,7 @@ All notable changes to Pettagam. Versions follow [semantic versioning](https://s
 - **Find** (`pettagam find`), **stats** (`pettagam stats`, and a summary line in Explore library) and **duplicates** (`pettagam duplicates [--csv]`) for the finished library and the old files.
 - **Export** (`pettagam export DEST --tag beach`): copies the files matching a search to another folder, never overwriting.
 - **Notifications**: background inbox sorting shows a desktop notification when files were filed (`service on --quiet` turns it off).
-- **Damage check** (`pettagam fixity [--minutes N]`, and a button in the panel): fingerprints every library file and later tells silent damage (bit rot) apart from edits. Shown in the health check.
+- **Damage check** (`pettagam fixity [--minutes N]`, and a button in the panel): fingerprints every library file and later tells silent damage (bit rot) apart from edits. Shown in the health check. With background sorting on, a 30-minute slice runs every Sunday night and notifies you about damage.
 - A release workflow: pushing a `v*` tag tests, builds and publishes a GitHub release from this changelog.
 
 ### Changed

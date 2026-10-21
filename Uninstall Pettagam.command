@@ -45,9 +45,12 @@ if [ -n "$PYTHON" ] && PYTHONPATH="$HERE" "$PYTHON" -m pettagam service off >/de
     ok "Background inbox sorting stopped"
 fi
 for f in "$HOME/Library/LaunchAgents/local.pettagam.inbox.plist" \
+         "$HOME/Library/LaunchAgents/local.pettagam.fixity.plist" \
          "$HOME/.config/systemd/user/pettagam-inbox.service" \
          "$HOME/.config/systemd/user/pettagam-inbox.timer" \
-         "$HOME/.config/systemd/user/pettagam-inbox.path"; do
+         "$HOME/.config/systemd/user/pettagam-inbox.path" \
+         "$HOME/.config/systemd/user/pettagam-fixity.service" \
+         "$HOME/.config/systemd/user/pettagam-fixity.timer"; do
     [ -e "$f" ] && rm -f "$f"
 done
 

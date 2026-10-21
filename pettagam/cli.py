@@ -169,6 +169,7 @@ def main(argv=None) -> int:
     fx.add_argument("--minutes", type=float, default=0, help="stop after this long; the next run carries on")
     fx.add_argument("--limit", type=int, default=0, help="read at most this many files")
     fx.add_argument("--library", help="default: the library in the catalog")
+    fx.add_argument("--notify", action="store_true", help="show a desktop notification if damage is found")
 
     args = p.parse_args(argv)
     if args.db and os.path.dirname(os.path.abspath(args.db)):
@@ -384,6 +385,10 @@ def _run(con, args) -> int:
     if args.cmd == "fixity":
         from .fixity import check
         res = check(con, args.library, minutes=args.minutes, limit=args.limit)
+        if args.notify and res["damaged"]:
+            from .notify import notify
+            notify("Pettagam: damaged files", f"{len(res['damaged'])} library files changed without being edited. "
+                   "The drive may be failing: run pettagam fixity to see which.")
         return 2 if res["damaged"] else (1 if res["missing"] or res["unreadable"] else 0)
     return 0
 

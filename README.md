@@ -226,7 +226,7 @@ pettagam fixity                 # the whole library
 pettagam fixity --minutes 60    # an hour at a time; the next run carries on where this one stopped
 ```
 
-A file you edited is noted and its fingerprint is updated. A file whose content changed while its size and date did not is reported as **damaged**, and it stays flagged until it is restored. That is a sign the drive may be failing. The health check shows when the library was last checked, and the panel has a **Check for damage** button.
+A file you edited is noted and its fingerprint is updated. A file whose content changed while its size and date did not is reported as **damaged**, and it stays flagged until it is restored. That is a sign the drive may be failing. The health check shows when the library was last checked, and the panel has a **Check for damage** button. When background sorting is on (next section), a 30-minute damage check also runs every Sunday at 3:00. It shows a notification if anything is damaged, and covers the whole library over a few weeks.
 
 ## Sorting the inbox automatically
 
@@ -236,7 +236,7 @@ pettagam service status
 pettagam service off
 ```
 
-This sorts the inbox in the background, even with the panel closed and after a restart: as soon as something lands in the inbox, and every 5 minutes (`--every SECONDS`) to pick up files that were still being copied. On a Mac it's a LaunchAgent (`~/Library/LaunchAgents/local.pettagam.inbox.plist`); on Ubuntu, a systemd user timer and path watch (`~/.config/systemd/user/pettagam-inbox.*`). What it does is logged in `~/.pettagam/inbox-service.log`, and a desktop notification says when files were filed (`--quiet` turns that off; on Ubuntu it uses `notify-send` when there is a desktop). The first time it reaches an external drive, macOS may ask whether Python may access files on a removable volume: allow it. On an Ubuntu server, run `loginctl enable-linger` once so it keeps running when you're logged out.
+This sorts the inbox in the background, even with the panel closed and after a restart: as soon as something lands in the inbox, and every 5 minutes (`--every SECONDS`) to pick up files that were still being copied. On a Mac it's a LaunchAgent (`~/Library/LaunchAgents/local.pettagam.inbox.plist`). On Ubuntu it's a systemd user timer and path watch (`~/.config/systemd/user/pettagam-inbox.*`). The weekly damage check runs beside it as `local.pettagam.fixity` or `pettagam-fixity.timer`, and `service off` stops both. What it does is logged in `~/.pettagam/inbox-service.log`, and a desktop notification says when files were filed (`--quiet` turns that off; on Ubuntu it uses `notify-send` when there is a desktop). The first time it reaches an external drive, macOS may ask whether Python may access files on a removable volume: allow it. On an Ubuntu server, run `loginctl enable-linger` once so it keeps running when you're logged out.
 
 ## Undo
 
