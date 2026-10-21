@@ -23,6 +23,17 @@ python3 -m pip install --user .
 
 You now have a `pettagam` command. If your shell can't find it, run `python3 -m pettagam` from this folder instead.
 
+## Easy launcher (panel)
+
+Prefer buttons to typing? Double-click **`Pettagam.command`** in Finder (or run `python3 -m pettagam.gui`, or `pettagam-panel` after installing). A small window opens where you choose the old files folder and the new library, then press:
+
+1. **Dry run** – scans and plans, changes nothing, then opens the report.
+2. **Open report** – opens `report.md` and `plan.csv`.
+3. **Place files** – asks first, then hardlinks or copies files into the library.
+4. **Verify** – checks everything is in sync.
+
+The panel remembers your folders (in `~/.pettagam-gui.json`) and shows the same output as the command line. **Stop** is safe: run the step again to continue. The first time you double-click, macOS may ask you to confirm opening it (right-click → Open).
+
 ## Use it
 
 Replace the paths with yours. On the Mac, the N300 Pro appears under `/Volumes/`. Keep the catalog (`--db`) and the report on the Mac's internal SSD, and put the library on the **same drive** as the old files so hardlinks can be used.

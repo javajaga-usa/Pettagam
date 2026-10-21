@@ -16,5 +16,8 @@ dev = ["pytest>=7"]
 [project.scripts]
 pettagam = "pettagam.cli:main"
 
+[project.gui-scripts]
+pettagam-panel = "pettagam.gui:main"
+
 [tool.setuptools]
 packages = ["pettagam"]
