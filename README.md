@@ -23,7 +23,21 @@ python3 -m pip install --user .
 
 You now have a `pettagam` command. If your shell can't find it, run `python3 -m pettagam` from this folder instead.
 
-## Use it
+## Easy launcher (no typing)
+
+**On the Mac:** in Finder, open the `launchers` folder and double-click **`Pettagam.command`**. The first time, macOS may block it; if so, right-click it and choose **Open**. Your browser opens the Pettagam panel, where you:
+
+1. **Choose folders.** Pick the folder with your old files, then the place for the new library.
+2. **Start dry run.** This scans and plans without changing anything. You see a count for every folder, can search any file to see where it will go and why, and can open the full report.
+3. **Place files**, then **Check everything is in sync.**
+
+The panel remembers your folders, shows live progress, and keeps its catalog in `~/.pettagam/` on your internal drive. To stop it, close the Terminal window that opened with it.
+
+**On Ubuntu Server (no screen):** run `launchers/pettagam-panel.sh --host 0.0.0.0 --no-browser`, then open the link it prints from any computer on your network. In this mode the link carries a secret token, so only people with the link can use the panel.
+
+You can also start it with `pettagam panel`.
+
+## Use it from the command line
 
 Replace the paths with yours. On the Mac, the N300 Pro appears under `/Volumes/`. Keep the catalog (`--db`) and the report on the Mac's internal SSD, and put the library on the **same drive** as the old files so hardlinks can be used.
 

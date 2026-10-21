@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pettagam</title>
+<style>
+:root {
+  --bg: #f6f5f2; --card: #ffffff; --ink: #1d1d1f; --muted: #6b6b70; --line: #e4e2dc;
+  --accent: #b5562b; --accent-ink: #ffffff; --ok: #2f7d4f; --warn: #a86b00; --bad: #b3261e;
+  --chip: #efece6; --bar: #e9e5dd; --code: #f1efea;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #161617; --card: #1f1f21; --ink: #ececee; --muted: #a0a0a6; --line: #34343a;
+    --accent: #e0864f; --accent-ink: #1a1a1a; --ok: #6cc28f; --warn: #e3b04b; --bad: #f08a80;
+    --chip: #2a2a2e; --bar: #2c2c31; --code: #26262a;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans Tamil", sans-serif; }
+header { padding: 20px 24px 8px; max-width: 1100px; margin: 0 auto; display: flex; align-items: baseline; gap: 12px; }
+header h1 { margin: 0; font-size: 22px; }
+header .ta { color: var(--muted); }
+header .status { margin-left: auto; font-size: 13px; color: var(--muted); }
+main { max-width: 1100px; margin: 0 auto; padding: 8px 24px 40px; display: grid; gap: 16px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
+.card h2 { margin: 0 0 4px; font-size: 16px; display: flex; align-items: center; gap: 10px; }
+.num { width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: var(--accent-ink);
+  display: inline-grid; place-items: center; font-size: 13px; font-weight: 600; }
+.hint { color: var(--muted); margin: 0 0 14px; font-size: 14px; }
+.row { display: grid; grid-template-columns: 170px 1fr auto; gap: 10px; align-items: center; margin-bottom: 10px; }
+.path { font-family: ui-monospace, Menlo, monospace; font-size: 13px; background: var(--code); border-radius: 8px;
+  padding: 8px 10px; overflow-x: auto; white-space: nowrap; min-height: 36px; }
+.path.empty { color: var(--muted); font-family: inherit; }
+button { font: inherit; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink);
+  padding: 8px 14px; cursor: pointer; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+button:disabled { opacity: .45; cursor: not-allowed; }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 14px 0; }
+.stat { background: var(--chip); border-radius: 10px; padding: 10px 12px; }
+.stat b { display: block; font-size: 20px; }
+.stat span { color: var(--muted); font-size: 13px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 500; }
+th.n, td.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bar { height: 6px; background: var(--bar); border-radius: 3px; overflow: hidden; min-width: 80px; }
+.bar i { display: block; height: 100%; background: var(--ok); }
+.log { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; background: var(--code); border-radius: 8px;
+  padding: 10px 12px; max-height: 220px; overflow: auto; white-space: pre-wrap; margin-top: 12px; }
+.msg { margin-top: 10px; font-size: 14px; }
+.msg.ok { color: var(--ok); } .msg.bad { color: var(--bad); } .msg.warn { color: var(--warn); }
+.tools { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.tools input, .tools select { font: inherit; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--card); color: var(--ink); }
+.tools input { flex: 1; min-width: 180px; }
+.mono { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; word-break: break-all; }
+.tag { font-size: 12px; padding: 1px 7px; border-radius: 10px; background: var(--chip); color: var(--muted); white-space: nowrap; }
+.tag.review { color: var(--warn); } .tag.dup { color: var(--muted); }
+.scroll { max-height: 420px; overflow: auto; }
+details.report summary { cursor: pointer; color: var(--accent); }
+.md h1 { font-size: 18px; } .md h2 { font-size: 15px; margin-top: 18px; }
+.md code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--ink);
+  width: min(640px, 94vw); padding: 0; }
+dialog::backdrop { background: rgba(0,0,0,.35); }
+.dlg-head { padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.dlg-list { max-height: 50vh; overflow: auto; }
+.dlg-list div { padding: 8px 16px; cursor: pointer; border-bottom: 1px solid var(--line); }
+.dlg-list div:hover { background: var(--chip); }
+.dlg-foot { padding: 12px 16px; display: flex; gap: 10px; justify-content: flex-end; }
+@media (max-width: 640px) {
+  header, main { padding-left: 16px; padding-right: 16px; }
+  .row { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Pettagam</h1><span class="ta">பெட்டகம்</span>
+  <span class="status" id="status">Loading…</span>
+</header>
+<main>
+  <section class="card">
+    <h2><span class="num">1</span>Choose folders</h2>
+    <p class="hint">Your old files are only ever read. Put the library on the same drive as the old files so placement is instant and uses no extra space.</p>
+    <div class="row"><b>Old files</b><div class="path" id="source"></div><button data-pick="source">Choose…</button></div>
+    <div class="row"><b>New library</b><div class="path" id="library"></div><button data-pick="library">Choose…</button></div>
+  </section>
+
+  <section class="card">
+    <h2><span class="num">2</span>Dry run and review</h2>
+    <p class="hint">Scans every file and plans where it goes. Nothing on the drive is changed.</p>
+    <div class="actions">
+      <button class="primary" id="btn-dryrun">Start dry run</button>
+      <span class="hint" style="margin:0" id="planned-at"></span>
+    </div>
+    <div class="stats" id="stats"></div>
+    <div id="folders"></div>
+    <details class="report" id="report-wrap" hidden><summary>Show the full report</summary><div class="md" id="report"></div></details>
+  </section>
+
+  <section class="card" id="browse-card" hidden>
+    <h2>Look up any file</h2>
+    <p class="hint">Search by old path or new location, or pick a folder.</p>
+    <div class="tools">
+      <input id="q" placeholder="Search, for example invoice or IMG_2041">
+      <select id="folder"><option value="">All folders</option></select>
+    </div>
+    <div class="scroll"><table id="plan"></table></div>
+  </section>
+
+  <section class="card">
+    <h2><span class="num">3</span>Place files and check</h2>
+    <p class="hint">Places every planned file into the library. You can stop and start again; finished files are skipped and nothing is ever overwritten.</p>
+    <div class="actions">
+      <button class="primary" id="btn-apply">Place files</button>
+      <button id="btn-verify">Check everything is in sync</button>
+    </div>
+    <div class="msg" id="result"></div>
+    <div class="log" id="log" hidden></div>
+  </section>
+</main>
+
+<dialog id="picker">
+  <div class="dlg-head"><b id="pick-title">Choose a folder</b><div class="path" id="pick-path" style="margin-top:8px"></div></div>
+  <div class="dlg-list" id="pick-list"></div>
+  <div class="dlg-head" id="pick-new" hidden style="border-top:1px solid var(--line);border-bottom:0">
+    <label>New library folder inside this one: <input id="pick-name" value="Pettagam" style="font:inherit;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink)"></label>
+    <div class="hint" style="margin:6px 0 0">It is created when files are placed. Leave empty to use the folder itself.</div>
+  </div>
+  <div class="dlg-foot"><button id="pick-up">Up</button><button id="pick-cancel">Cancel</button><button class="primary" id="pick-ok">Use this folder</button></div>
+</dialog>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const fmtN = (n) => (n || 0).toLocaleString();
+const fmtB = (b) => { b = b || 0; const u = ["B","KB","MB","GB","TB"]; let i = 0; while (b >= 1000 && i < 4) { b /= 1000; i++; } return `${b.toFixed(i ? 1 : 0)} ${u[i]}`; };
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+let state = null, lastFinished = null;
+
+async function api(path, body) {
+  const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
+  const ct = r.headers.get("Content-Type") || "";
+  const data = ct.includes("json") ? await r.json() : await r.text();
+  if (!r.ok) throw new Error(data.error || r.statusText);
+  return data;
+}
+
+function setPath(id, value) {
+  const el = $(id);
+  el.textContent = value || "Not chosen yet";
+  el.classList.toggle("empty", !value);
+}
+
+function render() {
+  const { settings, job, summary } = state;
+  setPath("source", settings.source);
+  setPath("library", settings.library);
+  const busy = job.running;
+  $("status").textContent = busy ? `Running: ${({ dryrun: "dry run", apply: "placing files", verify: "sync check" })[job.name]}…` : "Ready";
+  $("btn-dryrun").disabled = busy || !settings.source || !settings.library;
+  $("btn-apply").disabled = busy || !summary.planned;
+  $("btn-verify").disabled = busy || !summary.planned;
+
+  const log = $("log");
+  log.hidden = !job.log.length;
+  const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
+  log.textContent = job.log.join("\n");
+  if (atBottom) log.scrollTop = log.scrollHeight;
+
+  if (!summary.planned) { $("stats").innerHTML = ""; $("folders").innerHTML = ""; $("browse-card").hidden = true; $("report-wrap").hidden = true; return; }
+  const a = summary.actions, place = a.place || {}, dup = a.duplicate || {}, junk = a.skip || {};
+  const review = summary.folders.filter((f) => f.folder.startsWith("review/")).reduce((s, f) => s + f.files, 0);
+  $("stats").innerHTML = [
+    [fmtN(summary.total), `files, ${fmtB(summary.bytes)}`],
+    [fmtN(place.files), "to place"],
+    [fmtN(dup.files), `duplicates (${fmtB(dup.bytes)})`],
+    [fmtN(review), "need review"],
+    [fmtN(junk.files), "junk skipped"],
+    [fmtN(summary.placed), summary.errors ? `placed, ${fmtN(summary.errors)} errors` : "placed so far"],
+  ].map(([b, s]) => `<div class="stat"><b>${b}</b><span>${s}</span></div>`).join("");
+  $("folders").innerHTML = `<table><tr><th>Folder</th><th class="n">Files</th><th class="n">Size</th><th>Placed</th></tr>` +
+    summary.folders.map((f) => `<tr><td class="mono">${esc(f.folder)}/</td><td class="n">${fmtN(f.files)}</td><td class="n">${fmtB(f.bytes)}</td>` +
+      `<td><div class="bar"><i style="width:${(100 * (f.done || 0) / f.files).toFixed(1)}%"></i></div></td></tr>`).join("") + `</table>`;
+  $("browse-card").hidden = false;
+  $("report-wrap").hidden = false;
+  const sel = $("folder"), cur = sel.value;
+  sel.innerHTML = `<option value="">All folders</option>` + summary.folders.map((f) => `<option>${esc(f.folder)}</option>`).join("") +
+    `<option value="__duplicates">Duplicates</option><option value="__junk">Junk skipped</option>`;
+  sel.value = cur;
+}
+
+function showResult(job) {
+  const el = $("result"), r = job.result || {};
+  el.className = "msg";
+  if (r.error) { el.classList.add("bad"); el.textContent = r.error; return; }
+  if (job.name === "verify") {
+    const p = r.problems || {}, issues = Object.entries(p).filter(([, v]) => v.length);
+    el.classList.add(r.ok ? "ok" : "warn");
+    el.textContent = r.ok ? "Everything is in sync: every old file is placed, a duplicate, or junk, and every placed file matches its original."
+      : "Differences found: " + issues.map(([k, v]) => `${v.length} ${k}`).join(", ") + ". " +
+        issues.map(([k, v]) => v.slice(0, 5).map((x) => `${k}: ${x}`).join("; ")).join("; ");
+  } else if (job.name === "apply") {
+    el.classList.add(r.errors ? "warn" : "ok");
+    el.textContent = `Placed ${fmtN(r.done)} files by ${r.method === "link" ? "hardlink" : "copy"}` + (r.errors ? `, ${fmtN(r.errors)} errors (see the log).` : ". Next: check everything is in sync.");
+  } else if (job.name === "dryrun") {
+    el.classList.add("ok");
+    el.textContent = "Dry run finished. Review the folders above, then place the files.";
+    loadReport(); loadPlan();
+  }
+}
+
+async function refresh() {
+  try { state = await api("/api/state"); } catch (e) { $("status").textContent = "Panel stopped. Start it again from the launcher."; return setTimeout(refresh, 5000); }
+  render();
+  if (state.job.finished && state.job.finished !== lastFinished) {
+    if (lastFinished !== null || Date.now() / 1000 - state.job.finished < 5) showResult(state.job);
+    lastFinished = state.job.finished;
+  }
+  setTimeout(refresh, state.job.running ? 1000 : 4000);
+}
+
+async function run(action) {
+  if (action === "apply" && !confirm("Place all planned files into the library now? Your old files are not changed.")) return;
+  $("result").textContent = "";
+  try { await api("/api/run", { action }); } catch (e) { $("result").className = "msg bad"; $("result").textContent = e.message; }
+  lastFinished = state?.job?.finished ?? null;
+  refresh();
+}
+$("btn-dryrun").onclick = () => run("dryrun");
+$("btn-apply").onclick = () => run("apply");
+$("btn-verify").onclick = () => run("verify");
+
+function md(text) {
+  const inline = (s) => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
+  const out = []; let table = null, list = false;
+  const close = () => { if (table) { out.push("<table>" + table.join("") + "</table>"); table = null; } if (list) { out.push("</ul>"); list = false; } };
+  for (const line of text.split("\n")) {
+    if (line.startsWith("|")) {
+      if (/^\|\s*-/.test(line)) continue;
+      const cells = line.split("|").slice(1, -1).map((c) => inline(c.trim()));
+      if (!table) { table = [`<tr>${cells.map((c) => `<th>${c}</th>`).join("")}</tr>`]; continue; }
+      table.push(`<tr>${cells.map((c) => `<td>${c}</td>`).join("")}</tr>`); continue;
+    }
+    if (line.startsWith("- ")) { if (table) close(); if (!list) { out.push("<ul>"); list = true; } out.push(`<li>${inline(line.slice(2))}</li>`); continue; }
+    close();
+    if (line.startsWith("## ")) out.push(`<h2>${inline(line.slice(3))}</h2>`);
+    else if (line.startsWith("# ")) out.push(`<h1>${inline(line.slice(2))}</h1>`);
+    else if (line.trim()) out.push(`<p>${inline(line)}</p>`);
+  }
+  close();
+  return out.join("");
+}
+async function loadReport() { try { $("report").innerHTML = md(await api("/api/report")); } catch (e) {} }
+
+let planTimer;
+async function loadPlan() {
+  const rows = await api(`/api/plan?q=${encodeURIComponent($("q").value)}&folder=${encodeURIComponent($("folder").value)}`);
+  const tag = (r) => r.action === "duplicate" ? `<span class="tag dup">duplicate</span>` : r.action === "skip" ? `<span class="tag">junk: ${esc(r.junk)}</span>`
+    : (r.folder || "").startsWith("review/") ? `<span class="tag review">review</span>` : r.status === "done" ? `<span class="tag">placed</span>` : "";
+  $("plan").innerHTML = `<tr><th>Old location</th><th>New location</th><th>Why</th></tr>` + (rows.length ? rows.map((r) =>
+    `<tr><td class="mono">${esc(r.path)}</td><td class="mono">${esc(r.dest || "—")} ${tag(r)}</td><td>${esc(r.reason || "")}</td></tr>`).join("")
+    : `<tr><td colspan="3" class="hint">No matching files.</td></tr>`) + (rows.length === 200 ? `<tr><td colspan="3" class="hint">Showing the first 200; search to narrow it down.</td></tr>` : "");
+}
+$("q").oninput = () => { clearTimeout(planTimer); planTimer = setTimeout(loadPlan, 250); };
+$("folder").onchange = loadPlan;
+
+let pickFor = null, pickPath = "", pickParent = null;
+async function openDir(path) {
+  const d = await api(`/api/browse?path=${encodeURIComponent(path)}`);
+  pickPath = d.path; pickParent = d.parent;
+  setPath("pick-path", d.path || "");
+  $("pick-path").textContent = d.path || "Start here";
+  $("pick-up").disabled = d.parent === null;
+  $("pick-ok").disabled = !d.path;
+  $("pick-list").innerHTML = (d.error ? `<div class="hint">${esc(d.error)}</div>` : "") +
+    (d.dirs.length ? d.dirs.map((x) => `<div data-path="${esc(x.path)}">📁 ${esc(x.name)}</div>`).join("") : `<div class="hint">No folders inside.</div>`);
+}
+$("pick-list").onclick = (e) => { const p = e.target.closest("[data-path]"); if (p) openDir(p.dataset.path); };
+$("pick-up").onclick = () => openDir(pickParent || "");
+$("pick-cancel").onclick = () => $("picker").close();
+$("pick-ok").onclick = async () => {
+  const name = pickFor === "library" ? $("pick-name").value.trim().replace(/[\/]/g, "") : "";
+  const sep = pickPath.includes("\\") ? "\\" : "/";
+  await api("/api/settings", { [pickFor]: name ? pickPath.replace(/[\/\\]$/, "") + sep + name : pickPath });
+  $("picker").close(); refresh();
+};
+document.querySelectorAll("[data-pick]").forEach((b) => b.onclick = () => {
+  pickFor = b.dataset.pick;
+  $("pick-title").textContent = pickFor === "source" ? "Choose the folder with your old files" : "Choose (or create) the folder for the new library";
+  const cur = state?.settings?.[pickFor];
+  $("pick-new").hidden = pickFor !== "library";
+  $("picker").showModal();
+  openDir(cur ? (pickFor === "library" ? cur.replace(/[\/\\][^\/\\]+[\/\\]?$/, "") || cur : cur) : "");
+});
+
+refresh().then(() => { if (state?.summary?.planned) { loadReport(); loadPlan(); } });
+</script>
+</body>
+</html>
