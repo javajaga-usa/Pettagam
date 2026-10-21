@@ -55,6 +55,8 @@ th.n, td.n { text-align: right; font-variant-numeric: tabular-nums; white-space:
   padding: 10px 12px; max-height: 220px; overflow: auto; white-space: pre-wrap; margin-top: 12px; }
 .msg { margin-top: 10px; font-size: 14px; }
 .msg.ok { color: var(--ok); } .msg.bad { color: var(--bad); } .msg.warn { color: var(--warn); }
+textarea.code { width: 100%; min-height: 260px; font: 13px/1.5 ui-monospace, Menlo, monospace; padding: 10px 12px;
+  border-radius: 8px; border: 1px solid var(--line); background: var(--code); color: var(--ink); resize: vertical; }
 .tools { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
 .tools input, .tools select { font: inherit; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line);
   background: var(--card); color: var(--ink); }
@@ -74,11 +76,12 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .dlg-list div { padding: 8px 16px; cursor: pointer; border-bottom: 1px solid var(--line); }
 .dlg-list div:hover { background: var(--chip); }
 .checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 14px; }
-.checks li { display: grid; grid-template-columns: 22px 130px 1fr; gap: 8px; align-items: baseline; }
+.checks li > * { min-width: 0; overflow-wrap: anywhere; }
+.checks li { display: grid; grid-template-columns: 22px 130px minmax(0, 1fr); gap: 8px; align-items: baseline; }
 .checks .fix { grid-column: 3; color: var(--muted); font-size: 13px; }
 .checks .ok { color: var(--ok); } .checks .warn { color: var(--warn); } .checks .fail { color: var(--bad); }
 .switch { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
-@media (max-width: 640px) { .checks li { grid-template-columns: 22px 1fr; } .checks li > span:nth-child(3), .checks .fix { grid-column: 2; } }
+@media (max-width: 640px) { .checks li { grid-template-columns: 22px minmax(0, 1fr); } .checks li > span:nth-child(3), .checks .fix { grid-column: 2; } }
 .dlg-foot { padding: 12px 16px; display: flex; gap: 10px; justify-content: flex-end; }
 nav.tabs { max-width: 1100px; margin: 0 auto; padding: 0 24px; display: flex; gap: 6px; }
 nav.tabs button { border-radius: 999px; }
@@ -180,6 +183,20 @@ dl.info dt { color: var(--muted); } dl.info dd { margin: 0; word-break: break-al
     <p class="hint" style="margin:10px 0 0">Your rules live in <code>_meta/rules.json</code> in the library (create a starter one with <code>pettagam rules --init</code>). Views are folders of shortcuts under <code>views/</code>: by year, by camera, recent, large files and by tag. AI tags need an Anthropic API key and cost a little per file.</p>
   </section>
 
+  <section class="card" id="rules-card">
+    <details id="rules-box">
+      <summary><h2 style="display:inline-flex">Your rules</h2> <span class="hint">: send files to the folders you choose</span></summary>
+      <p class="hint" style="margin-top:10px">The first rule that matches a file wins; files that match none are placed by the smart types. Conditions include <code>ext</code>, <code>name</code> and <code>path</code> wildcards, <code>camera</code>, <code>category</code>, <code>subtype</code>, <code>size_over</code>, <code>older_than</code>, <code>year</code> and <code>tags</code>; folders can use <code>{year}</code>, <code>{month}</code>, <code>{category}</code> and <code>{camera}</code>. Remove <code>"off": true</code> to switch an example on. Rules are used by the next dry run and every inbox pass.</p>
+      <textarea class="code" id="rules-text" spellcheck="false" aria-label="Rules as JSON"></textarea>
+      <div class="actions" style="margin-top:10px">
+        <button id="btn-rules-check">Check</button>
+        <button class="primary" id="btn-rules-save">Save rules</button>
+        <span class="hint" id="rules-path" style="margin:0;overflow-wrap:anywhere;min-width:0"></span>
+      </div>
+      <div class="msg" id="rules-msg" style="overflow-wrap:anywhere"></div>
+    </details>
+  </section>
+
   <section class="card" id="activity">
     <h2>Activity</h2>
     <div class="msg" id="result"></div>
@@ -251,6 +268,7 @@ function render() {
   $("btn-tag").disabled = busy || !summary.planned;
   $("btn-undo").disabled = busy || !summary.placed;
   $("btn-fixity").disabled = busy || !summary.placed;
+  if ($("rules-box").open) loadRules(false);
   $("svc").disabled = !settings.inbox || !settings.library;
   $("btn-dryrun").disabled = busy || !settings.source || !settings.library;
   $("btn-apply").disabled = busy || !summary.planned;
@@ -351,6 +369,34 @@ $("btn-fixity").onclick = () => run("fixity");
 $("btn-undo").onclick = () => {
   if (confirm("Take the placed files back out of the library? Files sorted from the inbox go back to the inbox. A library file is only removed when its old file still has the same content, so nothing is lost.")) run("undo");
 };
+
+// --- Rules editor ------------------------------------------------------
+let rulesLoadedFor = null;
+async function loadRules(force) {
+  const lib = state?.settings?.library || "";
+  if (!force && rulesLoadedFor === lib) return;
+  rulesLoadedFor = lib;
+  const r = await api("/api/rules");
+  $("rules-text").value = r.text;
+  $("rules-text").disabled = $("btn-rules-check").disabled = $("btn-rules-save").disabled = !r.path;
+  $("rules-path").textContent = r.path ? (r.exists ? r.path : `Not saved yet; will be saved to ${r.path}`) : "Choose the library folder first.";
+  $("rules-msg").textContent = "";
+}
+async function checkRules(save) {
+  const el = $("rules-msg");
+  try {
+    const r = await api("/api/rules", { text: $("rules-text").value, save });
+    if (!r.ok) { el.className = "msg bad"; el.textContent = r.error; return; }
+    el.className = "msg ok";
+    const list = r.rules.map((x) => `${x.name}: ${fmtN(x.files)} files → ${x.then}/`).join(" · ");
+    el.textContent = (save ? "Saved. " : "Looks right. ") + (r.rules.length ? `${r.rules.length} switched on (${list})` : "No rules switched on yet") +
+      (r.off ? `; ${r.off} switched off.` : ".") + (save ? " Run a dry run to see them in the plan." : "");
+    if (save) $("rules-path").textContent = r.saved;
+  } catch (e) { el.className = "msg bad"; el.textContent = e.message; }
+}
+$("rules-box").addEventListener("toggle", () => { if ($("rules-box").open) loadRules(false); });
+$("btn-rules-check").onclick = () => checkRules(false);
+$("btn-rules-save").onclick = () => checkRules(true);
 
 async function loadDoctor() {
   try {

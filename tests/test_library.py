@@ -130,3 +130,14 @@ def test_notifications():
     assert inbox_message({"placed": 1, "duplicate": 2}) == \
         "Filed 1 file into the library; 2 were already there (moved to _duplicates)."
     assert inbox_message({"placed": 0}) == ""
+
+
+def test_rules_explain(placed, tmp_path, capsys):
+    con, src, lib, dbp = placed
+    rules = tmp_path / "rules.json"
+    rules.write_text('{"rules": [{"name": "Reports", "if": {"ext": "pdf", "name": "report*"}, "then": "documents/reports"}]}')
+    pdf, photo = src / "docs" / "report.pdf", src / "a" / "IMG_0001.JPG"
+    assert cli.main(["--db", str(dbp), "rules", "--rules", str(rules), "--explain", str(pdf), str(photo)]) == 0
+    out = capsys.readouterr().out
+    assert "-> documents/reports/  (your rule 'Reports')" in out
+    assert "images/photos" in out and "camera" in out and "smart type" in out

@@ -171,3 +171,21 @@ def test_doctor_service_and_undo_from_panel(server, monkeypatch):
     st = wait_job(base)
     assert st["job"]["result"]["removed"] == 1 and st["summary"]["placed"] == 0
     assert (src / "docs" / "Invoice_1.pdf").exists()
+
+
+def test_rules_editor(server):
+    base, tmp = server
+    lib = tmp / "lib"
+    assert call(base, "/api/rules")["path"] is None
+    call(base, "/api/settings", {"library": str(lib)})
+    r = call(base, "/api/rules")
+    assert not r["exists"] and '"Tax papers"' in r["text"]  # the starter examples, not saved yet
+    bad = call(base, "/api/rules", {"text": '{"rules": [{"name": "x", "if": {"colour": "red"}, "then": "a"}]}'})
+    assert not bad["ok"] and "colour" in bad["error"]
+    assert not call(base, "/api/rules", {"text": "{nope"})["ok"]
+    text = '{"rules": [{"name": "Tax", "if": {"ext": "pdf", "name": "*tax*"}, "then": "documents/tax"}]}'
+    res = call(base, "/api/rules", {"text": text, "save": True})
+    assert res["ok"] and res["rules"][0]["name"] == "Tax" and res["saved"].endswith("rules.json")
+    assert call(base, "/api/rules")["exists"]
+    assert not call(base, "/api/rules", {"text": '{"rules": [{"then": "../x"}]}', "save": True})["ok"]
+    assert "Tax" in (lib / "_meta" / "rules.json").read_text()  # a bad save leaves the good file alone

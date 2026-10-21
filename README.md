@@ -148,6 +148,14 @@ Folders can use `{year}`, `{month}`, `{category}`, `{subtype}`, `{ext}` and `{ca
 
 Rules apply to every dry run (the report lists how many files each rule took) and to the inbox. To move files already placed, run the dry run and **Place files** again into a fresh library folder.
 
+To see where a particular file would go, and why:
+
+```
+pettagam rules --explain "/Volumes/N300/Old files/Scans/tax 2023.pdf"
+```
+
+It prints the folder, the rule or smart type that chose it, and what Pettagam sees in the file: its type, size, date and camera. In the panel, open **Your rules** to edit the rules. **Check** validates them and counts the files each rule would place, and **Save** writes them only when they are valid.
+
 ## Inbox sorting
 
 Make a folder such as `/Volumes/N300/Inbox` and drop new files into it (or point your phone backup or downloads there). Then:

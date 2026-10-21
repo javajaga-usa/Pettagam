@@ -171,6 +171,47 @@ def facets(s: dict) -> dict:
     return library.facets(connect(s["db"]))
 
 
+def rules_file(s: dict) -> dict:
+    """The rules file for the editor: its text, or the starter examples when there is none yet."""
+    from .rules import STARTER
+    path = default_path(s.get("library"))
+    if not path:
+        return {"path": None, "text": "", "exists": False}
+    try:
+        with open(path, encoding="utf-8") as f:
+            return {"path": path, "text": f.read(), "exists": True}
+    except OSError:
+        return {"path": path, "text": json.dumps(STARTER, indent=2) + "\n", "exists": False}
+
+
+def check_rules(s: dict, text: str, save: bool = False) -> dict:
+    """Validate rules text, count what each rule would place, and save it when asked and valid."""
+    from .plan import rule_counts
+    from .rules import RuleError, parse_rules
+    try:
+        data = json.loads(text)
+    except ValueError as e:
+        return {"ok": False, "error": f"Not valid JSON: {e}"}
+    try:
+        rules = parse_rules(data)
+    except RuleError as e:
+        return {"ok": False, "error": str(e)}
+    counts = rule_counts(connect(s["db"]), rules) if os.path.exists(s["db"]) else {}
+    off = len(data["rules"]) - len(rules)
+    res = {"ok": True, "off": off, "rules": [{"name": r.name, "then": r.then, "files": counts.get(r.name, 0)}
+                                             for r in rules]}
+    if save:
+        path = default_path(s.get("library"))
+        if not path:
+            return {"ok": False, "error": "Choose the library folder first."}
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path + ".tmp", "w", encoding="utf-8") as f:
+            f.write(text if text.endswith("\n") else text + "\n")
+        os.replace(path + ".tmp", path)
+        res["saved"] = path
+    return res
+
+
 def library_file(s: dict, rel: str):
     """Absolute path of a file inside the library, or None (never anything outside it)."""
     lib = s.get("library")
@@ -327,6 +368,8 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/explore":
             return self._send(200, explore(s, q.get("q", ""), q.get("category", ""), q.get("tag", ""),
                                            q.get("year", ""), int(q.get("offset", "0") or 0)))
+        if u.path == "/api/rules":
+            return self._send(200, rules_file(s))
         if u.path == "/api/stats":
             if not os.path.exists(s["db"]):
                 return self._send(200, {"files": 0})
@@ -376,6 +419,10 @@ class Handler(BaseHTTPRequestHandler):
                     s[k] = body[k]
             save_settings(s)
             return self._send(200, {"settings": s})
+        if u.path == "/api/rules":
+            if JOB.running and body.get("save"):
+                return self._send(409, {"error": "Wait for the current step to finish."})
+            return self._send(200, check_rules(s, str(body.get("text", "")), bool(body.get("save"))))
         if u.path == "/api/service":
             from . import service
             try:

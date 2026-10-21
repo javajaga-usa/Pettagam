@@ -36,7 +36,7 @@ from . import __version__
 from .apply import apply
 from .db import connect, get_meta
 from .hashing import find_duplicates
-from .plan import SPLIT_AT, decide, plan
+from .plan import SPLIT_AT, explain, plan, rule_counts
 from .report import report
 from .rules import RuleError, default_path, load_rules, write_starter
 from .scan import scan
@@ -98,6 +98,7 @@ def main(argv=None) -> int:
     r.add_argument("--library", help="default: the library from the last dry run")
     r.add_argument("--rules", help="default: <library>/_meta/rules.json")
     r.add_argument("--init", action="store_true", help="create a starter rules file with examples switched off")
+    r.add_argument("--explain", nargs="+", metavar="FILE", help="show where these files would go, and why")
 
     ib = sub.add_parser("inbox", help="file new files from an inbox folder into the library")
     ib.add_argument("inbox")
@@ -245,16 +246,27 @@ def _run(con, args) -> int:
             print(("Created " if write_starter(path) else "Already exists: ") + path)
             print("Open it in a text editor, change the examples, and remove \"off\": true to switch one on.")
             return 0
-        if not os.path.exists(path):
+        if not os.path.exists(path) and not args.explain:
             print(f"No rules file yet at {path}. Create a starter one with: pettagam rules --init")
             return 0
         rules = load_rules(path)
+        if args.explain:
+            for f in args.explain:
+                try:
+                    e = explain(f, rules)
+                except OSError as err:
+                    print(f"{f}: {err.strerror or err}")
+                    continue
+                if e["junk"]:
+                    print(f"{f}\n  skipped as junk: {e['junk']}")
+                    continue
+                why = f"your rule '{e['rule']}'" if e["rule"] else f"smart type: {e['reason']}"
+                print(f"{f}\n  -> {e['folder']}/  ({why})")
+                print(f"  sees: {e['category']}/{e['subtype']}, .{e['ext']}, {e['size']:,} bytes, "
+                      f"{e['date']} ({e['date_from']})" + (f", camera {e['camera']}" if e["camera"] else ""))
+            return 0
         print(f"{path}: {len(rules)} rules switched on, all valid")
-        counts = {rl.name: 0 for rl in rules}
-        for row in con.execute("SELECT * FROM files WHERE junk IS NULL AND dup_of IS NULL"):
-            _, _, name = decide(row, rules)
-            if name:
-                counts[name] += 1
+        counts = rule_counts(con, rules)
         for rl in rules:
             print(f"  {rl.name}: {counts[rl.name]:,} files -> {rl.then}/")
         return 0

@@ -41,6 +41,36 @@ def decide(row, rules=(), now=None):
     return r, folder_for(r, row["ext"]), None
 
 
+def rule_counts(con, rules) -> dict:
+    """How many of the old files each rule would place (duplicates and junk aside)."""
+    counts = {rl.name: 0 for rl in rules}
+    for row in con.execute("SELECT * FROM files WHERE junk IS NULL AND dup_of IS NULL"):
+        _, _, name = decide(row, rules)
+        if name:
+            counts[name] += 1
+    return counts
+
+
+def explain(path: str, rules=(), now=None) -> dict:
+    """Where one file on disk would go, and why: the facts Pettagam sees and the rule or smart type that decides."""
+    import time
+    from .scan import _examine
+    st = os.stat(path)
+    e = _examine(os.path.dirname(os.path.abspath(path)), os.path.basename(path), st)
+    row = dict(zip(("path", "name", "size", "mtime", "dev", "ino", "ext", "kind", "width", "height",
+                    "camera", "has_exif", "has_tags", "junk", "taken"), e))
+    if row["junk"]:
+        return {"file": path, "junk": row["junk"], "folder": None, "rule": None}
+    r, folder, rule = decide(row, rules, now)
+    f = facts(row, r.category, r.subtype, r.confidence)
+    when = row["taken"] or row["mtime"]
+    return {"file": path, "junk": None, "folder": folder, "rule": rule, "category": r.category,
+            "subtype": r.subtype, "confidence": r.confidence, "reason": r.reason, "kind": row["kind"],
+            "ext": row["ext"], "size": row["size"], "camera": f.get("camera") or "",
+            "date": time.strftime("%Y-%m-%d", time.gmtime(when) if row["taken"] else time.localtime(when)),
+            "date_from": "photo's capture date" if row["taken"] else "file's modified date"}
+
+
 def _dedupe_names(names):
     """Give clashing names a __2, __3 suffix. Case-insensitive, so Mac and Windows clients agree."""
     seen, out = set(), []
