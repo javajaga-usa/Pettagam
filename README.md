@@ -226,6 +226,7 @@ It shows how many files will be sent and a rough cost, and asks before starting.
 ```
 pettagam find beach 2019                 # words in the name, folder, tags, description or camera
 pettagam find --tag receipt --year 2024  # also --type images|documents|...; --json for scripts
+pettagam find --on-this-day --type images # photos taken on today's date in earlier years (--day 12-25 for another)
 pettagam stats                           # files by type, by year, cameras, top tags, space saved
 pettagam duplicates --csv dupes.csv      # sets of identical old files, biggest waste first
 ```
@@ -239,7 +240,7 @@ pettagam export ~/Desktop/Tax-2024 --type documents --year 2024 --flat
 
 Export only reads the library. A file that is already there is skipped, and a different file with the same name gets ` (2)` added instead of being replaced.
 
-`find` prints full paths, so `pettagam find --tag invoice | head` works with other tools. `duplicates` only lists files. Nothing is deleted, and only one copy of each set went into the library. The Explore tab in the panel shows the same summary as `stats`.
+`find` prints full paths, so `pettagam find --tag invoice | head` works with other tools. `duplicates` only lists files. Nothing is deleted, and only one copy of each set went into the library. The Explore tab in the panel shows the same summary as `stats`. Its **On this day** button shows what was taken on today's date in every year.
 
 ## Measuring speed
 

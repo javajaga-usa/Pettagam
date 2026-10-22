@@ -190,3 +190,26 @@ def test_edit_tags_limits_and_cleans(placed):
     assert edit_tags(con, [it], tags=tags) == 0  # nothing changed
     with pytest.raises(ValueError):
         edit_tags(con, [("sqlite_master", 1)], add=["x"])
+
+
+def test_on_this_day(placed, capsys):  # FR-FIND-5
+    import calendar
+    con, src, lib, dbp = placed
+    day = lambda y, m, d: calendar.timegm((y, m, d, 12, 0, 0))
+    con.execute("UPDATE files SET taken=? WHERE name='IMG_0001.JPG'", (day(2019, 12, 25),))
+    con.execute("UPDATE files SET taken=NULL, mtime=? WHERE name='report.pdf'", (day(2021, 12, 25),))
+    con.execute("UPDATE files SET taken=?, mtime=? WHERE name='notes.txt'", (day(2021, 12, 24), day(2021, 12, 25)))
+    con.commit()
+    found = search(con, day="12-25")
+    assert [it["name"] for it in found["items"]] == ["report.pdf", "IMG_0001.JPG"]  # newest first; taken wins
+    assert search(con, category="images", day="12-25")["total"] == 1
+    assert search(con, day="12-24")["items"][0]["name"] == "notes.txt"
+    for bad in ("2019-12-25", "13-01", "1-5", "12-25' OR 1=1"):
+        with pytest.raises(ValueError):
+            search(con, day=bad)
+    db = ["--db", str(dbp)]
+    assert cli.main(db + ["find", "--day", "12-25"]) == 0
+    assert "2 found" in capsys.readouterr().err
+    with pytest.raises(SystemExit):
+        cli.main(db + ["find", "--day", "25-12"])
+    cli.main(db + ["find", "--on-this-day"])  # today: whatever it finds, it runs

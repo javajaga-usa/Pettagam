@@ -8,6 +8,7 @@ import heapq
 import itertools
 import math
 import os
+import re
 import time
 
 from .db import get_meta, has_search
@@ -25,14 +26,16 @@ SELECT 'inbox' AS src, id, dest, replace(dest, rtrim(dest, replace(dest, '/', ''
 ITEMS_SQL = PLACED_SQL + "\nUNION ALL" + INBOX_SQL
 NEWEST = "ORDER BY COALESCE(taken, mtime) DESC, dest"
 YEAR = "strftime('%Y', COALESCE(taken, mtime), 'unixepoch')"
+DAY = "strftime('%m-%d', COALESCE(taken, mtime), 'unixepoch')"
 # Which rows of each table are library files.
 IN_LIBRARY = {"files": "action='place' AND status='done'", "inbox": "action='placed'"}
 MAX_TAGS = 20  # by hand; AI tagging gives at most 8
 
 
 def search(con, q: str = "", category: str = "", tag: str = "", year: str = "",
-           offset: int = 0, limit: int = 120) -> dict:
-    """Search by words in the name, folder, tags, description or camera, plus optional filters."""
+           offset: int = 0, limit: int = 120, day: str = "") -> dict:
+    """Search by words in the name, folder, tags, description or camera, plus optional filters.
+    DAY ("MM-DD") keeps the files from that day of the year, in any year: "on this day"."""
     where, args = ["1=1"], []
     indexed = has_search(con)
     fts = []
@@ -51,6 +54,11 @@ def search(con, q: str = "", category: str = "", tag: str = "", year: str = "",
     if year:
         where.append(f"{YEAR} = ?")
         args.append(str(year))
+    if day:
+        if not re.fullmatch(r"(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])", day):
+            raise ValueError("day must look like 10-22 (month-day)")
+        where.append(f"{DAY} = ?")
+        args.append(day)
     # Each table on its own, so its index gives the newest files without sorting the whole library;
     # then the two short lists are merged.
     total, parts = 0, []

@@ -180,6 +180,8 @@ def main(argv=None) -> int:
     fd.add_argument("--type", help="category, e.g. images or documents")
     fd.add_argument("--tag")
     fd.add_argument("--year")
+    fd.add_argument("--day", metavar="MM-DD", help="taken on this day of the year, in any year, e.g. 12-25")
+    fd.add_argument("--on-this-day", action="store_true", help="taken on today's date in any year")
     fd.add_argument("--limit", type=int, default=50)
     fd.add_argument("--json", action="store_true", help="print JSON instead of paths")
 
@@ -463,7 +465,12 @@ def _run(con, args) -> int:
         return 0
     if args.cmd == "find":
         from .library import search
-        res = search(con, " ".join(args.words), args.type or "", args.tag or "", args.year or "", limit=args.limit)
+        day = time.strftime("%m-%d") if args.on_this_day else args.day or ""
+        try:
+            res = search(con, " ".join(args.words), args.type or "", args.tag or "", args.year or "",
+                         limit=args.limit, day=day)
+        except ValueError as e:
+            raise SystemExit(f"--day: {e}") from None
         lib = get_meta(con, "library") or ""
         if args.json:
             print(json.dumps(res, indent=2, default=str))

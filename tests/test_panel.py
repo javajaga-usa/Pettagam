@@ -115,6 +115,12 @@ def test_explore_inbox_and_files(server):
     assert d["total"] == 1 and d["items"][0]["dest"] == "documents/invoices/Invoice_1.pdf"
     assert d["items"][0]["original"] == os.path.join("docs", "Invoice_1.pdf")
     assert call(base, "/api/explore?category=images")["total"] == 1
+    inv = d["items"][0]
+    on_day = call(base, "/api/explore?day=" + time.strftime("%m-%d", time.gmtime(inv["taken"] or inv["mtime"])))
+    assert inv["dest"] in [it["dest"] for it in on_day["items"]]  # FR-FIND-5
+    with pytest.raises(urllib.error.HTTPError) as e:
+        call(base, "/api/explore?day=99-99")
+    assert e.value.code == 400
     f = call(base, "/api/facets")
     assert ["documents", 1] in f["categories"] and f["years"]
     assert call(base, "/api/file?path=documents/invoices/Invoice_1.pdf") == "%PDF-1.7 hello"

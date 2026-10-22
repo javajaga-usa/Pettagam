@@ -112,7 +112,7 @@ Each story lists the requirements that implement it (section 5 and 6). Acceptanc
 - Requirements: FR-INBOX-1..7, FR-SERVICE-1..4, DS-2, DS-3, DS-6.
 
 **US-6. Find things.** As the owner, I want to search by name, folder, year, camera and descriptive tags, and copy a selection elsewhere.
-- Requirements: FR-FIND-1..4, FR-VIEWS-1..3, FR-TAG-1..5.
+- Requirements: FR-FIND-1..5, FR-VIEWS-1..3, FR-TAG-1..6.
 
 **US-7. Know the drive is healthy.** As the owner, I want to learn about silent damage before it spreads to backups.
 - AC-7.1 A file whose content changed while its size and date did not is reported as damaged and stays flagged until restored.
@@ -234,6 +234,7 @@ Each story lists the requirements that implement it (section 5 and 6). Acceptanc
 | FR-FIND-2 | `stats` shall summarize by type, year, camera and tag, and the space saved. | `library.py` | `test_library.py::test_stats_and_duplicates` |
 | FR-FIND-3 | `duplicates` shall list identical sets, biggest waste first, and write them to CSV. | `library.py` | `test_library.py::test_stats_and_duplicates` |
 | FR-FIND-4 | `export` shall copy matching files elsewhere, never overwriting (a different file gets ` (2)`), without changing the library. | `library.py` | `test_library.py::test_export_copies_a_selection_without_overwriting` |
+| FR-FIND-5 | `find --on-this-day` (or `--day MM-DD`) and Explore's **On this day** button shall list the files taken (or, without a capture date, last changed) on that day of the year in any year, newest first, combined with the other filters. A malformed day is refused. | `library.py`, `cli.py`, `panel.py`, `panel.html` | `test_library.py::test_on_this_day`, `test_panel.py::test_explore_inbox_and_files` |
 
 ### 5.10 Damage check, health check, undo, relocate
 

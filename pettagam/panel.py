@@ -206,11 +206,11 @@ def _steps(action: str, s: dict):
 
 
 def explore(s: dict, q: str = "", category: str = "", tag: str = "", year: str = "",
-            offset: int = 0, limit: int = 120) -> dict:
+            offset: int = 0, limit: int = 120, day: str = "") -> dict:
     """Search the finished library: by words in the name, folder, tags or description."""
     if not os.path.exists(s["db"]):
         return {"items": [], "total": 0}
-    return library.search(connect(s["db"]), q, category, tag, year, offset, limit)
+    return library.search(connect(s["db"]), q, category, tag, year, offset, limit, day)
 
 
 def edit_tags(s: dict, body: dict) -> tuple:
@@ -450,8 +450,12 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/plan":
             return self._send(200, plan_rows(s, q.get("q", ""), q.get("folder", "")))
         if u.path == "/api/explore":
-            return self._send(200, explore(s, q.get("q", ""), q.get("category", ""), q.get("tag", ""),
-                                           q.get("year", ""), int(q.get("offset", "0") or 0)))
+            try:
+                return self._send(200, explore(s, q.get("q", ""), q.get("category", ""), q.get("tag", ""),
+                                               q.get("year", ""), int(q.get("offset", "0") or 0),
+                                               day=q.get("day", "")))
+            except ValueError as e:
+                return self._send(400, {"error": str(e)})
         if u.path == "/api/rules":
             return self._send(200, rules_file(s))
         if u.path == "/api/stats":
