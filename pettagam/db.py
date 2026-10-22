@@ -2,6 +2,7 @@
 
 import os
 import sqlite3
+import time
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
@@ -111,21 +112,112 @@ def connect(path: str) -> sqlite3.Connection:
         con.close()
         raise NewerCatalog(f"{path} was written by a newer Pettagam (catalog version {version}; this one knows "
                            f"up to {SCHEMA_VERSION}). Update Pettagam to use it; the catalog was not changed.")
-    con.execute("PRAGMA journal_mode=WAL")
+    _wal(con)
     con.execute("PRAGMA synchronous=NORMAL")
     if version < SCHEMA_VERSION:
-        has_data = con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='files'").fetchone()
-        if has_data:
-            _backup(con, f"{path}.v{version}.bak")
-            with con:  # all steps or none
+        _set_up(con, path)
+    ensure_search(con)
+    return con
+
+
+def _wal(con) -> None:
+    """Switch a new catalog to write-ahead logging. Switching ignores the busy timeout, so when another
+    thread is switching or creating the same new catalog at that moment, wait a little and try again."""
+    for _ in range(200):
+        try:
+            if con.execute("PRAGMA journal_mode").fetchone()[0] == "wal":
+                return
+            con.execute("PRAGMA journal_mode=WAL")
+            return
+        except sqlite3.OperationalError as e:
+            if "locked" not in str(e) and "busy" not in str(e):
+                raise
+            time.sleep(0.05)
+    con.execute("PRAGMA journal_mode=WAL")  # one last time, letting the error through
+
+
+def _set_up(con, path: str) -> None:
+    """Create or upgrade the catalog. The panel can open a new catalog from several threads at once, so this
+    takes the write lock first (BEGIN IMMEDIATE waits for it) and then looks again at what is there."""
+    has_data = con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='files'").fetchone()
+    if has_data:
+        _backup(con, f"{path}.v{schema_version(con)}.bak")
+    con.execute("BEGIN IMMEDIATE")
+    try:
+        version = schema_version(con)
+        if version < SCHEMA_VERSION:  # nobody else did it while we waited
+            if con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='files'").fetchone():
                 for v in range(version + 1, SCHEMA_VERSION + 1):
                     MIGRATIONS[v](con)
-                con.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
-    con.executescript(SCHEMA)
-    if version < SCHEMA_VERSION:
-        con.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+            for stmt in _statements(SCHEMA):
+                con.execute(stmt)
+            con.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         con.commit()
-    return con
+    except BaseException:
+        con.rollback()
+        raise
+
+
+def _statements(script: str) -> list:
+    out, cur = [], ""
+    for line in script.splitlines(keepends=True):
+        cur += line
+        if sqlite3.complete_statement(cur):
+            out.append(cur.strip())
+            cur = ""
+    return out
+
+
+# Word search for Explore and `find`: an SQLite full-text index with the trigram tokenizer, which finds any
+# piece of a word of 3 or more letters (like LIKE '%word%', ignoring case) without reading every row.
+# Library files only: placed files have rowid 2*id, inbox files 2*id+1. Triggers keep it in step.
+# Python builds whose SQLite lacks FTS5 or trigram (older than 3.34) get no index; search then uses LIKE.
+SEARCH_TEXT = "COALESCE({p}.dest,'')||char(10)||COALESCE({p}.tags,'')||char(10)||COALESCE({p}.description,'')" \
+              "||char(10)||COALESCE({p}.camera,'')"
+SEARCH = [  # run one by one, in one transaction (see ensure_search)
+    """CREATE VIRTUAL TABLE search USING fts5(text, tokenize='trigram')""",
+    f"""CREATE TRIGGER files_search_ins AFTER INSERT ON files WHEN new.action='place' AND new.status='done' BEGIN
+    INSERT INTO search(rowid, text) VALUES (2*new.id, {SEARCH_TEXT.format(p="new")}); END""",
+    """CREATE TRIGGER files_search_del AFTER DELETE ON files BEGIN DELETE FROM search WHERE rowid=2*old.id; END""",
+    f"""CREATE TRIGGER files_search_upd AFTER UPDATE OF dest, tags, description, camera, action, status ON files BEGIN
+    DELETE FROM search WHERE rowid=2*old.id;
+    INSERT INTO search(rowid, text) SELECT 2*new.id, {SEARCH_TEXT.format(p="new")}
+        WHERE new.action='place' AND new.status='done'; END""",
+    f"""CREATE TRIGGER inbox_search_ins AFTER INSERT ON inbox WHEN new.action='placed' BEGIN
+    INSERT INTO search(rowid, text) VALUES (2*new.id+1, {SEARCH_TEXT.format(p="new")}); END""",
+    """CREATE TRIGGER inbox_search_del AFTER DELETE ON inbox BEGIN DELETE FROM search WHERE rowid=2*old.id+1; END""",
+    f"""CREATE TRIGGER inbox_search_upd AFTER UPDATE OF dest, tags, description, camera, action ON inbox BEGIN
+    DELETE FROM search WHERE rowid=2*old.id+1;
+    INSERT INTO search(rowid, text) SELECT 2*new.id+1, {SEARCH_TEXT.format(p="new")} WHERE new.action='placed'; END""",
+    f"""INSERT INTO search(rowid, text) SELECT 2*f.id, {SEARCH_TEXT.format(p="f")} FROM files f
+    WHERE f.action='place' AND f.status='done'""",
+    f"""INSERT INTO search(rowid, text) SELECT 2*i.id+1, {SEARCH_TEXT.format(p="i")} FROM inbox i WHERE i.action='placed'""",
+]
+
+
+def has_search(con) -> bool:
+    return bool(con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='search'").fetchone())
+
+
+def ensure_search(con) -> None:
+    """Build the word-search index once, from what is already in the catalog."""
+    if has_search(con):
+        return
+    try:
+        con.execute("CREATE VIRTUAL TABLE temp.probe USING fts5(x, tokenize='trigram')")
+        con.execute("DROP TABLE temp.probe")
+    except sqlite3.OperationalError:
+        return  # this SQLite can't; search falls back to LIKE
+    con.commit()
+    con.execute("BEGIN IMMEDIATE")  # one writer: the panel may open the catalog from two threads at once
+    try:
+        if not has_search(con):
+            for stmt in SEARCH:
+                con.execute(stmt)
+        con.commit()
+    except BaseException:
+        con.rollback()
+        raise
 
 
 def _backup(con, dest: str) -> None:

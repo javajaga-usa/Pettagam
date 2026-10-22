@@ -130,6 +130,7 @@ class Job:
 
 
 JOB = Job()
+BENCH_SEARCH_ROWS = 200_000  # the panel's speed check keeps the made-up catalog small, so it finishes quickly
 
 
 def _steps(action: str, s: dict):
@@ -176,8 +177,20 @@ def _steps(action: str, s: dict):
         res = check(connect(s["db"]), s["library"], minutes=60, progress=say)
         return {k: (v[:200] if isinstance(v, list) else v) for k, v in res.items()}
 
+    def do_bench(say):
+        from . import bench
+        source = s["source"] if os.path.isdir(s["source"] or "") else None
+        lib = s["library"] if os.path.isdir(s["library"] or "") else None
+        res = bench.run(source, lib, files=2000, workers=int(s["workers"]), search_rows=BENCH_SEARCH_ROWS, progress=say)
+        from .db import set_meta
+        set_meta(connect(s["db"]), "bench_last", json.dumps({"at": time.time(), **res}))
+        lines = bench.verdicts(res)
+        for name, got, target, ok in lines:
+            say(f"  {'' if ok is None else 'OK  ' if ok else 'SLOW'} {name}: {got} (target {target})")
+        return {"lines": [{"name": n, "got": g, "target": t, "ok": ok} for n, g, t, ok in lines]}
+
     steps = {"dryrun": dryrun, "apply": do_apply, "verify": do_verify, "inbox": do_inbox,
-             "views": do_views, "tag": do_tag, "undo": do_undo, "fixity": do_fixity}
+             "views": do_views, "tag": do_tag, "undo": do_undo, "fixity": do_fixity, "bench": do_bench}
 
     def with_backup(say):
         result = steps[action](say)
@@ -501,7 +514,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, service.status())
         if u.path == "/api/run":
             action = body.get("action")
-            if action not in ("dryrun", "apply", "verify", "inbox", "views", "tag", "undo", "fixity"):
+            if action not in ("dryrun", "apply", "verify", "inbox", "views", "tag", "undo", "fixity", "bench"):
                 return self._send(400, {"error": "unknown action"})
             if action == "inbox" and not os.path.isdir(s.get("inbox") or ""):
                 return self._send(400, {"error": "Choose the inbox folder first."})

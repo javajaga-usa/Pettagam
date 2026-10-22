@@ -8,6 +8,7 @@ to see whether hardlinks work there.
 import importlib.util
 import os
 import shutil
+import sqlite3
 import sys
 import tempfile
 import time
@@ -188,6 +189,14 @@ def run_checks(con=None, source: str = None, library: str = None, inbox: str = N
                               "Keep the catalog on the computer's internal SSD; it's much faster."))
         else:
             out.append(_check("ok", "Catalog", f"{db_path}"))
+    if con is not None:
+        from .db import has_search
+        if has_search(con):
+            out.append(_check("ok", "Word search", "Indexed: searches stay quick however big the library gets."))
+        else:
+            out.append(_check("warn", "Word search", f"Not indexed: this Python's SQLite ({sqlite3.sqlite_version}) "
+                              "has no trigram search, so searching a big library is slower.",
+                              "Use Python from python.org or Homebrew, which include it."))
 
     if inbox:
         if not os.path.isdir(inbox):

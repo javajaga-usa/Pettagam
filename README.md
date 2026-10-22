@@ -235,7 +235,7 @@ Export only reads the library. A file that is already there is skipped, and a di
 pettagam bench "/Volumes/N300/Old files" --library /Volumes/N300/Pettagam
 ```
 
-Times how fast this computer and drive scan files, read them, make hardlinks and search a library of a million files, each against the target in [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) (OK or SLOW). The old files are only read; the hardlink test uses its own small files in the library's `_meta` folder and removes them. Without arguments it uses the folders from the last dry run. Run it just after plugging in the drive: later runs are faster because the computer remembers what it read. `--json` prints the numbers for keeping.
+Times how fast this computer and drive scan files, read them, make hardlinks and search a library of a million files, each against the target in [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) (OK or SLOW). The old files are only read; the hardlink test uses its own small files in the library's `_meta` folder and removes them. Without arguments it uses the folders from the last dry run. Run it just after plugging in the drive: later runs are faster because the computer remembers what it read. `--json` prints the numbers for keeping. In the panel, **Measure speed** under the health check does the same for the folders you chose.
 
 ## Health check
 
@@ -276,6 +276,14 @@ pettagam undo
 Takes the placed files back out of the library and moves files that came from the inbox back into the inbox, so you can change your rules and place again. A library file is only removed when its old file is still there with the same content (for hardlinks, the very same file), so undo never removes the only copy of anything; files it keeps are listed. Views are removed too; your rules and `_meta` stay.
 
 ## Moving to Ubuntu later
+
+The short way: let Pettagam write out the steps for you, with your own paths filled in.
+
+```
+pettagam move-plan --to /srv/ninaivu --host you@server --write ~/Desktop/move
+```
+
+It shows how much will be copied and every command in order, and writes them as two scripts: `move-1-here.sh` for the Mac and `move-2-new-computer.sh` for the server. It copies nothing itself, so read them and run them when you're ready. The details behind those steps:
 
 Pettagam keeps a copy of its catalog with the library (`<library>/_meta/catalog.db`, refreshed after every placement, inbox pass and tagging run), so the catalog travels with the drive. On Ubuntu, set Pettagam up (see [Install](#install)), plug in the drive, and point a new catalog at the new mount points:
 

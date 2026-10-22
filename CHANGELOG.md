@@ -4,11 +4,16 @@ All notable changes to Pettagam. Versions follow [semantic versioning](https://s
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-22
+
 ### Breaking
 - **Python 3.13 or newer is now required** (it was 3.9). On the Mac, install Python from python.org or Homebrew; on Ubuntu 24.04, from the deadsnakes PPA. An older Python stops with a message saying what to install. Run Setup Pettagam (or `launchers/setup-ubuntu.sh`) again after updating: Pettagam now always runs from its own `.venv` beside the code, so the app, the `pettagam` command and the background job use the same Python. Setup finds Python where python.org and Homebrew install it even when Terminal's `python3` is still Apple's 3.9. Setup also moves a background inbox job that was set up with the old Python onto the new one (`pettagam service refresh`), and the health check flags one that wasn't.
 
 ### Added
+- **Word search uses a full-text index**: searching a million files for a word takes milliseconds instead of about a second. It finds the same files as before (any part of a word of 3 or more letters, ignoring case, now in every language). Existing catalogs build the index once, on first open; that takes a minute or so for a couple of million files. The health check says if your Python's SQLite can't do this (then search still works, more slowly).
 - **HTTPS for the panel on the network** (`pettagam panel --host 0.0.0.0 --tls`): with a certificate Pettagam makes for this computer once (it prints the fingerprint to check), or your own with `--tls-cert`/`--tls-key`. Plain network mode now warns that it isn't encrypted.
+- `pettagam move-plan --to /srv/ninaivu --host you@server` writes out every step and command for moving the library (and the old files, keeping hardlinks) to the Ubuntu server, optionally as two scripts. It copies nothing itself.
+- **Measure speed** button in the panel's health check runs the same timings on your folders.
 - `pettagam bench` measures scanning, reading, hardlink placing and Explore search speed on your drive against the targets in the requirements, without changing anything.
 - An MIT licence (`LICENSE`), declared in the package metadata.
 - **Requirements specification** ([docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)): user stories with acceptance criteria, functional, data-safety, security, privacy, performance and platform requirements, each traced to the code and the test that checks it, plus the audit's findings and open items. `tests/test_requirements.py` fails if the document names a test that doesn't exist.
@@ -27,6 +32,9 @@ All notable changes to Pettagam. Versions follow [semantic versioning](https://s
 - `~/.pettagam/` is created readable by you only. The background log is rotated past 5 MB.
 - Packaging: the version is defined once in `pettagam/__init__.py`; `pyproject.toml` has a readme, classifiers and project links, version ranges for the optional extras (`xxhash>=3,<5`, `anthropic>=1,<3`), an `all` extra, and `build` in `dev`. CI adds Python 3.13, a run with the extras, and a check that the built wheel installs and includes the panel.
 - README: the SSH tunnel is the recommended way to use the panel from another computer, and moving to Ubuntu explains copying from APFS to ext4 with hardlinks kept.
+
+### Fixed
+- A brand-new catalog opened by two parts of the panel at the same moment could fail with "database is locked". Creating and upgrading the catalog now waits its turn.
 
 ## [0.3.0] - 2026-10-21
 
@@ -66,7 +74,8 @@ All notable changes to Pettagam. Versions follow [semantic versioning](https://s
 - Read-only scanner, smart-type classification, duplicate detection, planner with folder splitting, placement by hardlink or copy, sync verification, dry-run report and `plan.csv`, manifest.
 - The point-and-click panel (`pettagam panel`) and double-click launchers.
 
-[Unreleased]: https://github.com/javajaga-usa/Pettagam/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/javajaga-usa/Pettagam/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/javajaga-usa/Pettagam/releases/tag/v0.4.0
 [0.3.0]: https://github.com/javajaga-usa/Pettagam/releases/tag/v0.3.0
 [0.2.0]: https://github.com/javajaga-usa/Pettagam/releases/tag/v0.2.0
 [0.1.0]: https://github.com/javajaga-usa/Pettagam/releases/tag/v0.1.0

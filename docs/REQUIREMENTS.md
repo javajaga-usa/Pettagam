@@ -4,7 +4,7 @@
 | --- | --- |
 | Document | Software requirements specification |
 | Product | Pettagam (பெட்டகம், "strongbox") |
-| Version | 1.0, covering Pettagam 0.3.0 and the unreleased changes listed in CHANGELOG.md |
+| Version | 1.1, covering Pettagam 0.4.0 |
 | Date | 2026-10-22 |
 | Owner | Jagadeesh (javajaga-usa) |
 | Status | Baseline. Changes go through a pull request that updates this file, the code and the tests together. |
@@ -251,7 +251,9 @@ Each story lists the requirements that implement it (section 5 and 6). Acceptanc
 | FR-MOVE-1 | A copy of the catalog shall be kept at `<library>/_meta/catalog.db`, refreshed after placing, inbox passes, tagging and undo. | `maintenance.py` | `test_maintenance.py::test_catalog_copy_travels_and_relocate_restores_it` |
 | FR-MOVE-2 | `relocate` shall restore a catalog from that copy and point it at new source and library roots, then spot-check files. | `maintenance.py` | `test_maintenance.py::test_catalog_copy_travels_and_relocate_restores_it` |
 | FR-MOVE-3 | Paths inside the catalog shall be relative to the source and library roots. | `db.py` | `test_maintenance.py::test_catalog_copy_travels_and_relocate_restores_it` |
+| FR-MOVE-4 | `pettagam move-plan --to DIR [--host USER@SERVER] [--write DIR]` shall write out, without copying or changing anything, the steps and exact commands to move the library to another computer: check and stop background sorting, copy with `rsync -aH` (the old files and the library in one run when the library is made of hardlinks, so they stay hardlinks, and nothing else from beside them), set up there, `relocate` from the catalog that travelled, verify and fixity, and turn the inbox back on. It shall show the size to copy, warn when copying the library alone would turn hardlinks into full copies, and never overwrite a script. | `move.py`, `cli.py` | `test_move.py::test_plan_copies_hardlinked_files_with_their_originals`, `test_move.py::test_plan_command_and_scripts`, `test_move.py::test_following_the_plan_keeps_hardlinks_and_relocate_finds_everything` |
 | FR-BENCH-1 | `pettagam bench [SOURCE] [--library LIB]` shall time the scan (files per second), sequential reading (MB/s), hardlink placing (files per second) and Explore search over a made-up catalog of a million files, and show each against its target (PERF-1, 2, 4). It shall only read the old files, make its test files only in a temporary folder under `<library>/_meta/` and remove it, and record the numbers in the catalog (`bench_last`). | `bench.py`, `cli.py` | `test_bench.py::test_bench_reads_old_files_only_and_cleans_up`, `test_bench.py::test_bench_reports_a_drive_without_hardlinks`, `test_bench.py::test_bench_command_records_the_numbers` |
+| FR-BENCH-2 | The panel's health check card shall have a Measure speed button that runs the same timings on the chosen folders (with a smaller made-up catalog so it finishes quickly) and shows each against its target. | `panel.py`, `panel.html` | `test_panel.py::test_speed_check_from_panel` |
 
 ### 5.11 Panel and install
 
@@ -282,7 +284,7 @@ Each story lists the requirements that implement it (section 5 and 6). Acceptanc
 | DS-6 | Only one writer at a time per library (FR-APPLY-5). | `safeio.py` | `test_safety.py::test_apply_and_undo_wait_for_the_library_lock` |
 | DS-7 | The catalog shall survive a crash (SQLite WAL) and be backed up with the library (FR-MOVE-1). An older catalog shall be upgraded in place on first open. | `db.py`, `maintenance.py` | `test_milestone2.py::test_old_catalog_gets_new_columns` |
 | DS-8 | Silent damage to library files shall be detectable (FR-FIX-1..4). | `fixity.py` | `test_library.py::test_fixity_finds_silent_damage_but_not_edits` |
-| DS-9 | The catalog shall carry a layout version (`PRAGMA user_version`). Opening an older catalog shall first save a copy of it (`<catalog>.v<N>.bak`) and then upgrade it in one transaction, step by step. A catalog from a newer Pettagam shall be refused without being changed, including when relocating from the copy that travelled with the drive. | `db.py`, `maintenance.py` | `test_catalog.py::test_new_catalog_gets_the_current_version`, `test_catalog.py::test_old_catalog_is_upgraded_with_a_backup_and_keeps_its_data`, `test_catalog.py::test_catalog_from_a_newer_pettagam_is_refused_untouched`, `test_catalog.py::test_every_version_has_an_upgrade_step` |
+| DS-9 | The catalog shall carry a layout version (`PRAGMA user_version`). Opening an older catalog shall first save a copy of it (`<catalog>.v<N>.bak`) and then upgrade it in one transaction, step by step. A catalog from a newer Pettagam shall be refused without being changed, including when relocating from the copy that travelled with the drive. Creating or upgrading shall be safe when several threads open the same new catalog at once (the panel does). | `db.py`, `maintenance.py` | `test_catalog.py::test_new_catalog_opened_from_many_threads_at_once`, `test_catalog.py::test_new_catalog_gets_the_current_version`, `test_catalog.py::test_old_catalog_is_upgraded_with_a_backup_and_keeps_its_data`, `test_catalog.py::test_catalog_from_a_newer_pettagam_is_refused_untouched`, `test_catalog.py::test_every_version_has_an_upgrade_step` |
 
 ### 6.2 Security
 
@@ -319,8 +321,9 @@ Threat model: Pettagam runs as the owner on their own computer. The panel is a w
 | PERF-1 | The scan should examine at least 1,000 files per second on the N300 Pro with 2 workers and the catalog on the SSD. | `pettagam bench` (FR-BENCH-1); N300 number still to record (gap G-12) |
 | PERF-2 | Hardlink placement should run at least 2,000 files per second on the same drive. | `pettagam bench`; N300 number still to record (gap G-12) |
 | PERF-3 | Duplicate detection shall read in full only files that share both size and a 64 KB sample with another file. | `test_library.py::test_stats_and_duplicates` |
-| PERF-4 | The panel's Explore tab should answer a search over 1 million files in under 1 second. | `pettagam bench`; `test_bench.py::test_search_over_many_files_is_quick` (100,000 files in CI). In the build container, 1 million files: opening view 0.02-0.04 s, word searches 0.5-1.0 s |
+| PERF-4 | The panel's Explore tab should answer a search over 1 million files in under 1 second. | `pettagam bench`; `test_bench.py::test_search_over_many_files_is_quick` (100,000 files in CI). In the build container, 1 million files: opening view 0.02 s, a rare word 0.003 s, a common word 0.1 s, a 1-2 letter word (no index) 0.5 s |
 | PERF-6 | Explore's opening view (newest first) shall come from an index, not by sorting the whole library, and placed and inbox files shall be merged in date order with pages that join up. | `test_bench.py::test_newest_first_uses_the_index`, `test_bench.py::test_search_merges_placed_and_inbox_files_newest_first` |
+| PERF-7 | Words of 3 or more letters shall be found through an SQLite full-text index (FTS5, trigram tokenizer) over the folder and name, tags, description and camera of library files, with the same results as a plain substring search. The index shall be built once for an existing catalog and kept in step by triggers (placing, undo, tagging, inbox, a fresh scan). Where Python's SQLite lacks trigram search, search shall still work (slower) and the health check shall say so. | `test_catalog.py::test_word_search_index_finds_what_like_finds`, `test_catalog.py::test_word_search_index_follows_every_change`, `test_catalog.py::test_old_catalog_gets_the_search_index`, `test_catalog.py::test_health_check_reports_the_search_index` |
 | PERF-5 | The background jobs shall run at low priority (`Nice=10`, idle I/O) so they don't slow the computer. | `test_requirements.py::test_background_jobs_run_at_low_priority_as_the_user` |
 
 ### 6.5 Usability
@@ -417,7 +420,7 @@ The audit compared the 0.3.0 code, tests and README against the requirements abo
 
 | Gap | Finding | Recommendation | Owner decision needed? |
 | --- | --- | --- | --- |
-| G-12 | Performance targets (PERF-1, 2, 4) have not been measured on the N300 Pro yet. `pettagam bench` now measures all three; it found that Explore's opening view took 2.3 s over a million files (fixed with an index: 0.03 s). Word searches over a million files take 0.5-1.0 s, close to the target. | Run `pettagam bench "/Volumes/N300/Old files" --library /Volumes/N300/Pettagam` once, just after plugging in the drive, and paste the numbers here. If word searches are too slow on the Mac, the next step is an SQLite full-text index. | No |
+| G-12 | Performance targets (PERF-1, 2, 4) have not been measured on the N300 Pro yet. `pettagam bench` measures all three. In the build container Explore over a million files now opens in 0.02 s and finds a word in 0.003-0.1 s (full-text index, PERF-7). | Run `pettagam bench "/Volumes/N300/Old files" --library /Volumes/N300/Pettagam` once, just after plugging in the drive, and paste the numbers here. | No |
 
 ## 10. Verification and change control
 
