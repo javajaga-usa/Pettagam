@@ -4,6 +4,8 @@ All notable changes to Pettagam. Versions follow [semantic versioning](https://s
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-22
+
 ### Breaking
 - **Python 3.13 or newer is now required** (it was 3.9). On the Mac, install Python from python.org or Homebrew; on Ubuntu 24.04, from the deadsnakes PPA. An older Python stops with a message saying what to install. Run Setup Pettagam (or `launchers/setup-ubuntu.sh`) again after updating: Pettagam now always runs from its own `.venv` beside the code, so the app, the `pettagam` command and the background job use the same Python. Setup finds Python where python.org and Homebrew install it even when Terminal's `python3` is still Apple's 3.9. Setup also moves a background inbox job that was set up with the old Python onto the new one (`pettagam service refresh`), and the health check flags one that wasn't.
 
@@ -69,7 +71,8 @@ All notable changes to Pettagam. Versions follow [semantic versioning](https://s
 - Read-only scanner, smart-type classification, duplicate detection, planner with folder splitting, placement by hardlink or copy, sync verification, dry-run report and `plan.csv`, manifest.
 - The point-and-click panel (`pettagam panel`) and double-click launchers.
 
-[Unreleased]: https://github.com/javajaga-usa/Pettagam/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/javajaga-usa/Pettagam/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/javajaga-usa/Pettagam/releases/tag/v0.4.0
 [0.3.0]: https://github.com/javajaga-usa/Pettagam/releases/tag/v0.3.0
 [0.2.0]: https://github.com/javajaga-usa/Pettagam/releases/tag/v0.2.0
 [0.1.0]: https://github.com/javajaga-usa/Pettagam/releases/tag/v0.1.0
