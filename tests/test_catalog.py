@@ -146,3 +146,25 @@ def test_health_check_reports_the_search_index(tmp_path):  # PERF-7
     con.execute("DROP TABLE search")
     check = {c["name"]: c for c in run_checks(con)}["Word search"]
     assert check["status"] == "warn" and "python.org" in check["fix"]
+
+
+def test_new_catalog_opened_from_many_threads_at_once(tmp_path):  # DS-9
+    import threading
+    errors = []
+    for trial in range(15):  # the race needed a few tries to show before the fix
+        path = str(tmp_path / f"p{trial}.db")
+        start = threading.Barrier(6)
+
+        def open_and_write(path=path, start=start):
+            start.wait()
+            try:
+                con = db.connect(path)
+                db.set_meta(con, f"t{threading.get_ident()}", 1)
+            except Exception as e:  # "database is locked" before the fix
+                errors.append(repr(e))
+        threads = [threading.Thread(target=open_and_write) for _ in range(6)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+    assert not errors, errors[:3]

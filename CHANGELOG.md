@@ -33,6 +33,9 @@ All notable changes to Pettagam. Versions follow [semantic versioning](https://s
 - Packaging: the version is defined once in `pettagam/__init__.py`; `pyproject.toml` has a readme, classifiers and project links, version ranges for the optional extras (`xxhash>=3,<5`, `anthropic>=1,<3`), an `all` extra, and `build` in `dev`. CI adds Python 3.13, a run with the extras, and a check that the built wheel installs and includes the panel.
 - README: the SSH tunnel is the recommended way to use the panel from another computer, and moving to Ubuntu explains copying from APFS to ext4 with hardlinks kept.
 
+### Fixed
+- A brand-new catalog opened by two parts of the panel at the same moment could fail with "database is locked". Creating and upgrading the catalog now waits its turn.
+
 ## [0.3.0] - 2026-10-21
 
 ### Added
