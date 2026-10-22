@@ -115,6 +115,14 @@ def test_explore_inbox_and_files(server):
     assert d["total"] == 1 and d["items"][0]["dest"] == "documents/invoices/Invoice_1.pdf"
     assert d["items"][0]["original"] == os.path.join("docs", "Invoice_1.pdf")
     assert call(base, "/api/explore?category=images")["total"] == 1
+    inv = d["items"][0]
+    on_day = call(base, "/api/explore?day=" + time.strftime("%m-%d", time.gmtime(inv["taken"] or inv["mtime"])))
+    assert inv["dest"] in [it["dest"] for it in on_day["items"]]  # FR-FIND-5
+    assert call(base, f"/api/copies?src=files&id={inv['id']}") == {"copies": [], "total": 0}  # FR-FIND-6
+    assert call(base, "/api/copies?src=files&id=x")["total"] == 0
+    with pytest.raises(urllib.error.HTTPError) as e:
+        call(base, "/api/explore?day=99-99")
+    assert e.value.code == 400
     f = call(base, "/api/facets")
     assert ["documents", 1] in f["categories"] and f["years"]
     assert call(base, "/api/file?path=documents/invoices/Invoice_1.pdf") == "%PDF-1.7 hello"
@@ -138,6 +146,22 @@ def test_explore_inbox_and_files(server):
     call(base, "/api/run", {"action": "views"})
     assert wait_job(base)["job"]["result"]["Recent"] == 3
     assert call(base, "/api/estimate")["files"] == 3
+
+    # Tags typed in the file details are saved and searchable at once (FR-TAG-6).
+    it = call(base, "/api/explore?q=receipt")["items"][0]
+    d = call(base, "/api/tags", {"src": it["src"], "id": it["id"], "tags": ["Tax 2026", "shop"],
+                                 "description": "Hardware store"})
+    assert d == {"tags": "tax 2026,shop", "description": "Hardware store"}
+    assert call(base, "/api/explore?tag=tax 2026".replace(" ", "%20"))["total"] == 1
+    assert call(base, "/api/explore?q=hardware")["total"] == 1
+    for bad in ({"src": "sqlite_master", "id": 1, "tags": []}, {"src": "inbox", "id": "1", "tags": []},
+                {"src": "inbox", "id": it["id"], "tags": "a,b"}):
+        with pytest.raises(urllib.error.HTTPError) as e:
+            call(base, "/api/tags", bad)
+        assert e.value.code == 400
+    with pytest.raises(urllib.error.HTTPError) as e:
+        call(base, "/api/tags", {"src": "inbox", "id": 999, "tags": ["x"]})
+    assert e.value.code == 404
 
 
 def test_doctor_service_and_undo_from_panel(server, monkeypatch):

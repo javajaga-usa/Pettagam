@@ -146,3 +146,84 @@ def test_rules_explain(placed, tmp_path, capsys):
     out = capsys.readouterr().out
     assert "-> documents/reports/  (your rule 'Reports')" in out
     assert "images/photos" in out and "camera" in out and "smart type" in out
+
+
+def test_tags_by_hand_from_the_command_line(placed, monkeypatch, capsys):  # FR-TAG-6
+    con, src, lib, dbp = placed
+    photo = next(os.path.join(lib, r[0]) for r in con.execute("SELECT dest FROM files WHERE name='IMG_0001.JPG'"))
+    db = ["--db", str(dbp)]
+    assert cli.main(db + ["tags", photo, "--add", "Grandma, Goa Trip", "--remove", "family"]) == 0
+    con.close()
+    from pettagam.db import connect
+    con = connect(str(dbp))
+    assert con.execute("SELECT tags FROM files WHERE name='IMG_0001.JPG'").fetchone()[0] == "beach,grandma,goa trip"
+    assert search(con, "grandma")["total"] == 1 and search(con, tag="goa trip")["total"] == 1  # index kept up
+    assert search(con, tag="family")["total"] == 0
+    assert os.path.exists(lib / "_meta" / "catalog.db")  # the drive's copy has the change too
+
+    # A path inside the library works as well, and listing changes nothing.
+    rel = os.path.relpath(photo, lib)
+    assert cli.main(db + ["tags", rel]) == 0
+    assert "tags: beach, grandma, goa trip" in capsys.readouterr().out
+    assert cli.main(db + ["tags", rel, "--set", "", "--description", "  Sunset at   the beach "]) == 0
+    row = con.execute("SELECT tags, description FROM files WHERE name='IMG_0001.JPG'").fetchone()
+    assert row[0] is None and row[1] == "Sunset at the beach"  # no tags left: AI tagging may suggest some
+    assert cli.main(db + ["tags", str(src / "a" / "IMG_0001.JPG"), "--add", "x"]) == 1  # old files aren't library
+
+    # Many files at once from a search asks first.
+    monkeypatch.setattr("builtins.input", lambda _: "n")
+    assert cli.main(db + ["tags", "--match", "documents", "--add", "paperwork"]) == 1
+    assert search(con, tag="paperwork")["total"] == 0
+    monkeypatch.setattr("builtins.input", lambda _: "y")
+    assert cli.main(db + ["tags", "--match", "documents", "--add", "paperwork"]) == 0
+    assert search(con, tag="paperwork")["total"] == search(con, category="documents")["total"] == 2
+
+
+def test_edit_tags_limits_and_cleans(placed):
+    from pettagam.library import MAX_TAGS, edit_tags, find_item
+    con, src, lib, dbp = placed
+    assert find_item(con, "documents/no-such-file.txt") is None
+    it = find_item(con, next(r[0] for r in con.execute("SELECT dest FROM files WHERE name='notes.txt'")))
+    assert edit_tags(con, [it], tags=[f"Tag {i}" for i in range(30)] + ["tag 1", "a,b"]) == 1
+    tags = con.execute("SELECT tags FROM files WHERE id=?", (it[1],)).fetchone()[0].split(",")
+    assert len(tags) == MAX_TAGS and tags[:2] == ["tag 0", "tag 1"] and len(set(tags)) == len(tags)
+    assert edit_tags(con, [it], tags=tags) == 0  # nothing changed
+    with pytest.raises(ValueError):
+        edit_tags(con, [("sqlite_master", 1)], add=["x"])
+
+
+def test_on_this_day(placed, capsys):  # FR-FIND-5
+    import calendar
+    con, src, lib, dbp = placed
+    day = lambda y, m, d: calendar.timegm((y, m, d, 12, 0, 0))
+    con.execute("UPDATE files SET taken=? WHERE name='IMG_0001.JPG'", (day(2019, 12, 25),))
+    con.execute("UPDATE files SET taken=NULL, mtime=? WHERE name='report.pdf'", (day(2021, 12, 25),))
+    con.execute("UPDATE files SET taken=?, mtime=? WHERE name='notes.txt'", (day(2021, 12, 24), day(2021, 12, 25)))
+    con.commit()
+    found = search(con, day="12-25")
+    assert [it["name"] for it in found["items"]] == ["report.pdf", "IMG_0001.JPG"]  # newest first; taken wins
+    assert search(con, category="images", day="12-25")["total"] == 1
+    assert search(con, day="12-24")["items"][0]["name"] == "notes.txt"
+    for bad in ("2019-12-25", "13-01", "1-5", "12-25' OR 1=1"):
+        with pytest.raises(ValueError):
+            search(con, day=bad)
+    db = ["--db", str(dbp)]
+    assert cli.main(db + ["find", "--day", "12-25"]) == 0
+    assert "2 found" in capsys.readouterr().err
+    with pytest.raises(SystemExit):
+        cli.main(db + ["find", "--day", "25-12"])
+    cli.main(db + ["find", "--on-this-day"])  # today: whatever it finds, it runs
+
+
+def test_copies_of_a_library_file(placed):  # FR-FIND-6
+    from pettagam.library import copies_of
+    con, src, lib, dbp = placed
+    keep = con.execute("SELECT id FROM files WHERE name='IMG_0001.JPG'").fetchone()[0]
+    got = copies_of(con, "files", keep)
+    assert got["total"] == 2 and got["copies"] == sorted(got["copies"])
+    assert {os.path.relpath(c, src) for c in got["copies"]} == {os.path.join("b", "IMG_0001 copy.JPG"),
+                                                                os.path.join("c", "IMG_0001 (2).JPG")}
+    assert all(os.path.exists(c) for c in got["copies"])
+    assert copies_of(con, "files", keep, limit=1) == {"copies": got["copies"][:1], "total": 2}
+    pdf = con.execute("SELECT id FROM files WHERE name='report.pdf'").fetchone()[0]
+    assert copies_of(con, "files", pdf)["total"] == 0 and copies_of(con, "inbox", keep)["total"] == 0

@@ -105,13 +105,13 @@ def content_for(path: str, ext: str):
     return None
 
 
-def clean_tags(tags) -> list:
+def clean_tags(tags, limit: int = 8) -> list:
     out = []
     for t in tags if isinstance(tags, list) else []:
         t = " ".join(str(t).lower().replace(",", " ").split())[:40]
         if t and t not in out:
             out.append(t)
-    return out[:8]
+    return out[:limit]
 
 
 class Tagger:

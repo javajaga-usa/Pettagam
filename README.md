@@ -54,7 +54,7 @@ Open the Pettagam app (or run `pettagam panel`, or double-click `launchers/Petta
 4. **Place files**, then **Check everything is in sync.** **Undo placement…** takes it all back out again if you change your mind.
 5. **Keep it tidy:** choose an inbox folder and press **Sort the inbox now**, or tick **Sort the inbox automatically in the background**. **Rebuild views** and **Add AI tags…** are here too (tagging shows the number of files and a rough cost first).
 
-The **Explore library** tab shows every file in the library, newest first, with thumbnails. Search by any word in the name, folder, tags or description, filter by kind and year, or click a tag. Click a file to see a preview, where it came from, its date and tags, and to open it.
+The **Explore library** tab shows every file in the library, newest first, with thumbnails. Search by any word in the name, folder, tags or description, filter by kind and year, or click a tag. Click a file to see a preview, where it came from (and any identical copies in the old files), its date and tags, to edit its tags, and to open it. **On this day** shows what was taken on today's date in earlier years.
 
 The panel remembers your folders, shows live progress, and keeps its catalog in `~/.pettagam/` on your internal drive. To stop it, close the Terminal window that opened with it.
 
@@ -194,6 +194,18 @@ This builds `<library>/views/` with `by-year/<year>/<month>/` (photos and videos
 
 To change the views, write them to a file you can edit with `pettagam views --init` and edit `<library>/_meta/views.json`. Views use the same conditions as rules; a file appears in every view it matches, and `{tag}` makes one folder per tag.
 
+## Tags by hand
+
+You can tag files yourself, for free, with or without AI tagging. In **Explore library**, click a file, type tags separated by commas (and a description if you like) and press **Save tags**. Or from the command line:
+
+```
+pettagam tags /Volumes/N300/Pettagam/images/photos/2019/IMG_0001.jpg --add grandma,goa --remove family
+pettagam tags --match "goa 2019" --add holiday      # every file the search finds, after asking
+pettagam tags images/photos/2019/IMG_0001.jpg       # show its tags
+```
+
+`--set a,b` replaces all the tags and `--description "..."` the description. Tags are lowercase and a file can have up to 20. Search sees a change at once; run **Rebuild views** (`pettagam views`) to update the `by-tag/` folders. AI tagging leaves files you have tagged alone unless you use `--retag`.
+
 ## AI tagging
 
 Optional. Claude looks at each photo, PDF and text file in the library and gives it 3 to 8 tags (beach, birthday, receipt, passport…) and a one-line description, which you can then search in **Explore library** and use in rules and views.
@@ -214,6 +226,7 @@ It shows how many files will be sent and a rough cost, and asks before starting.
 ```
 pettagam find beach 2019                 # words in the name, folder, tags, description or camera
 pettagam find --tag receipt --year 2024  # also --type images|documents|...; --json for scripts
+pettagam find --on-this-day --type images # photos taken on today's date in earlier years (--day 12-25 for another)
 pettagam stats                           # files by type, by year, cameras, top tags, space saved
 pettagam duplicates --csv dupes.csv      # sets of identical old files, biggest waste first
 ```
@@ -227,7 +240,7 @@ pettagam export ~/Desktop/Tax-2024 --type documents --year 2024 --flat
 
 Export only reads the library. A file that is already there is skipped, and a different file with the same name gets ` (2)` added instead of being replaced.
 
-`find` prints full paths, so `pettagam find --tag invoice | head` works with other tools. `duplicates` only lists files. Nothing is deleted, and only one copy of each set went into the library. The Explore tab in the panel shows the same summary as `stats`.
+`find` prints full paths, so `pettagam find --tag invoice | head` works with other tools. `duplicates` only lists files. Nothing is deleted, and only one copy of each set went into the library. The Explore tab in the panel shows the same summary as `stats`. Its **On this day** button shows what was taken on today's date in every year.
 
 ## Measuring speed
 

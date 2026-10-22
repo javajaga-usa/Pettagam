@@ -206,11 +206,29 @@ def _steps(action: str, s: dict):
 
 
 def explore(s: dict, q: str = "", category: str = "", tag: str = "", year: str = "",
-            offset: int = 0, limit: int = 120) -> dict:
+            offset: int = 0, limit: int = 120, day: str = "") -> dict:
     """Search the finished library: by words in the name, folder, tags or description."""
     if not os.path.exists(s["db"]):
         return {"items": [], "total": 0}
-    return library.search(connect(s["db"]), q, category, tag, year, offset, limit)
+    return library.search(connect(s["db"]), q, category, tag, year, offset, limit, day)
+
+
+def edit_tags(s: dict, body: dict) -> tuple:
+    """Tags and description typed in Explore's file details. Returns (status, reply)."""
+    tags, desc = body.get("tags"), body.get("description")
+    if body.get("src") not in library.IN_LIBRARY or not isinstance(body.get("id"), int) \
+            or not (isinstance(tags, list) and all(isinstance(t, str) for t in tags)) \
+            or not (desc is None or isinstance(desc, str)):
+        return 400, {"error": "bad request"}
+    if not os.path.exists(s["db"]):
+        return 404, {"error": "not found"}
+    con = connect(s["db"])
+    library.edit_tags(con, [(body["src"], body["id"])], tags=tags, description=desc)
+    row = con.execute(f"SELECT tags, description FROM {body['src']} WHERE id=? AND "
+                      f"{library.IN_LIBRARY[body['src']]}", (body["id"],)).fetchone()
+    if not row:
+        return 404, {"error": "not found"}
+    return 200, {"tags": row[0] or "", "description": row[1] or ""}
 
 
 def facets(s: dict) -> dict:
@@ -432,8 +450,16 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/plan":
             return self._send(200, plan_rows(s, q.get("q", ""), q.get("folder", "")))
         if u.path == "/api/explore":
-            return self._send(200, explore(s, q.get("q", ""), q.get("category", ""), q.get("tag", ""),
-                                           q.get("year", ""), int(q.get("offset", "0") or 0)))
+            try:
+                return self._send(200, explore(s, q.get("q", ""), q.get("category", ""), q.get("tag", ""),
+                                               q.get("year", ""), int(q.get("offset", "0") or 0),
+                                               day=q.get("day", "")))
+            except ValueError as e:
+                return self._send(400, {"error": str(e)})
+        if u.path == "/api/copies":
+            if not (os.path.exists(s["db"]) and q.get("id", "").isdigit()):
+                return self._send(200, {"copies": [], "total": 0})
+            return self._send(200, library.copies_of(connect(s["db"]), q.get("src", ""), int(q["id"])))
         if u.path == "/api/rules":
             return self._send(200, rules_file(s))
         if u.path == "/api/stats":
@@ -512,6 +538,8 @@ class Handler(BaseHTTPRequestHandler):
             except SystemExit as e:
                 return self._send(400, {"error": str(e)})
             return self._send(200, service.status())
+        if u.path == "/api/tags":
+            return self._send(*edit_tags(s, body))
         if u.path == "/api/run":
             action = body.get("action")
             if action not in ("dryrun", "apply", "verify", "inbox", "views", "tag", "undo", "fixity", "bench"):

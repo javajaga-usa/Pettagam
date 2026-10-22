@@ -94,7 +94,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .dlg-foot { padding: 12px 16px; display: flex; gap: 10px; justify-content: flex-end; }
 nav.tabs { max-width: 1100px; margin: 0 auto; padding: 0 24px; display: flex; gap: 6px; }
 nav.tabs button { border-radius: 999px; }
-nav.tabs button[aria-selected="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+nav.tabs button[aria-selected="true"], button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
 .tile { background: var(--chip); border-radius: 10px; overflow: hidden; cursor: pointer; border: 1px solid var(--line);
   display: flex; flex-direction: column; min-width: 0; }
@@ -116,6 +116,9 @@ nav.tabs button[aria-selected="true"] { background: var(--ink); color: var(--bg)
 .preview iframe { width: 100%; height: 60vh; border: 0; background: #fff; }
 dl.info { display: grid; grid-template-columns: 110px 1fr; gap: 6px 12px; margin: 0; padding: 14px 16px; font-size: 14px; }
 dl.info dt { color: var(--muted); } dl.info dd { margin: 0; word-break: break-all; }
+form.edit { display: grid; gap: 8px; padding: 0 16px 6px; font-size: 14px; }
+form.edit label { display: grid; gap: 3px; color: var(--muted); }
+form.edit input { font: inherit; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
 @media (max-width: 640px) {
   nav.tabs { padding: 0 16px; }
   header, main { padding-left: 16px; padding-right: 16px; }
@@ -224,6 +227,7 @@ dl.info dt { color: var(--muted); } dl.info dd { margin: 0; word-break: break-al
       <input id="ex-q" type="search" aria-label="Search the library" placeholder="Search names, folders, tags and descriptions, for example beach 2019">
       <select id="ex-cat" aria-label="Kind of file"><option value="">All kinds</option></select>
       <select id="ex-year" aria-label="Year"><option value="">Any year</option></select>
+      <button type="button" id="ex-day" aria-pressed="false" title="Files from today's date in earlier years">On this day</button>
     </div>
     <div class="tagcloud" id="ex-tags" role="group" aria-label="Tags"></div>
     <p class="hint" id="ex-count" role="status" aria-live="polite"></p>
@@ -236,6 +240,11 @@ dl.info dt { color: var(--muted); } dl.info dd { margin: 0; word-break: break-al
   <h2 class="sr-only" id="dt-title">File details</h2>
   <div class="preview" id="dt-preview"></div>
   <dl class="info" id="dt-info"></dl>
+  <form class="edit" id="dt-edit">
+    <label>Tags, separated by commas<input id="dt-tags" autocomplete="off" placeholder="beach, grandma, goa trip"></label>
+    <label>Description<input id="dt-desc" autocomplete="off" maxlength="300"></label>
+    <div class="actions"><button type="submit">Save tags</button><span class="hint" id="dt-saved" role="status" aria-live="polite"></span></div>
+  </form>
   <div class="dlg-foot"><a id="dt-open" class="button" target="_blank" rel="noopener">Open</a><button id="dt-close" class="primary">Close</button></div>
 </dialog>
 
@@ -557,10 +566,11 @@ async function loadFacets() {
   $("ex-tags").innerHTML = f.tags.slice(0, 40).map(([t, n]) => `<button type="button" class="chip" data-tag="${esc(t)}" aria-pressed="${t === exTag}" aria-label="${esc(t)}, ${fmtN(n)} files">${esc(t)} · ${fmtN(n)}</button>`).join("");
 }
 
-let exTag = "", exItems = [];
+let exTag = "", exItems = [], dtItem = null, exDay = "";
+const today = () => { const t = new Date(); return `${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`; };
 async function loadExplore(reset) {
   if (reset) { exOffset = 0; exItems = []; }
-  const qs = new URLSearchParams({ q: $("ex-q").value, category: $("ex-cat").value, year: $("ex-year").value, tag: exTag, offset: exOffset });
+  const qs = new URLSearchParams({ q: $("ex-q").value, category: $("ex-cat").value, year: $("ex-year").value, tag: exTag, offset: exOffset, day: exDay });
   const d = await api(`/api/explore?${qs}`);
   const html = d.items.map((r) => {
     const i = exItems.push(r) - 1;
@@ -571,12 +581,15 @@ async function loadExplore(reset) {
   }).join("");
   if (reset) $("ex-grid").innerHTML = html; else $("ex-grid").insertAdjacentHTML("beforeend", html);
   exOffset += d.items.length;
-  $("ex-count").textContent = d.total ? `${fmtN(d.total)} files` + (exTag ? ` tagged “${exTag}”` : "") + (exTag ? " · click the tag again to clear" : "") : "No files match. Place files first, or try other words.";
+  const onDay = exDay ? ` from ${new Date().toLocaleDateString(undefined, { day: "numeric", month: "long" })} in any year` : "";
+  $("ex-count").textContent = d.total ? `${fmtN(d.total)} files` + (exTag ? ` tagged “${exTag}”` : "") + onDay + (exTag ? " · click the tag again to clear" : "")
+    : exDay ? `Nothing${onDay} yet.` : "No files match. Place files first, or try other words.";
   $("ex-more").hidden = exOffset >= d.total;
 }
 $("ex-q").oninput = () => { clearTimeout(exTimer); exTimer = setTimeout(() => loadExplore(true), 250); };
 $("ex-cat").onchange = $("ex-year").onchange = () => loadExplore(true);
 $("ex-more").onclick = () => loadExplore(false);
+$("ex-day").onclick = () => { exDay = exDay ? "" : today(); $("ex-day").setAttribute("aria-pressed", String(!!exDay)); loadExplore(true); };
 document.addEventListener("click", (e) => {
   const chip = e.target.closest("[data-tag]");
   if (chip) { e.stopPropagation(); exTag = exTag === chip.dataset.tag ? "" : chip.dataset.tag;
@@ -596,8 +609,31 @@ function openDetail(r) {
   $("dt-info").innerHTML = rows.filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${k === "Tags" ? v : esc(v)}</dd>`).join("");
   $("dt-title").textContent = r.name;
   $("dt-open").href = url;
-  $("detail").showModal();
+  $("dt-tags").value = tagsOf(r).join(", "); $("dt-desc").value = r.description || ""; $("dt-saved").textContent = "";
+  dtItem = r;
+  if (!$("detail").open) $("detail").showModal();
+  if (r.src === "files") showCopies(r);
 }
+let copiesAsked = 0;
+async function showCopies(r) {
+  const asked = ++copiesAsked;  // the details may be redrawn before the answer comes
+  try {
+    const d = await api(`/api/copies?${new URLSearchParams({ src: r.src, id: r.id })}`);
+    if (!d.total || asked !== copiesAsked || !$("detail").open) return;
+    const more = d.total > d.copies.length ? `<br>and ${fmtN(d.total - d.copies.length)} more` : "";
+    $("dt-info").insertAdjacentHTML("beforeend", `<dt>Same file in old files</dt><dd>${d.copies.map(esc).join("<br>")}${more}` +
+      `<br><span class="hint">Only one copy went into the library. Nothing was deleted.</span></dd>`);
+  } catch (e) {}
+}
+$("dt-edit").onsubmit = async (e) => {
+  e.preventDefault();
+  const r = dtItem, tags = $("dt-tags").value.split(",").map((t) => t.trim()).filter(Boolean);
+  try {
+    const d = await api("/api/tags", { src: r.src, id: r.id, tags, description: $("dt-desc").value });
+    r.tags = d.tags; r.description = d.description; facetsLoaded = false;
+    openDetail(r); $("dt-saved").textContent = "Saved. Rebuild views to update the by-tag folders.";
+  } catch (err) { $("dt-saved").textContent = `Not saved: ${err.message}`; }
+};
 $("dt-close").onclick = () => $("detail").close();
 
 try { if (localStorage.getItem("pettagam-tab") === "explore") showTab("explore"); } catch (e) {}

@@ -4,7 +4,7 @@
 | --- | --- |
 | Document | Software requirements specification |
 | Product | Pettagam (பெட்டகம், "strongbox") |
-| Version | 1.1, covering Pettagam 0.4.0 |
+| Version | 1.2, covering Pettagam 0.5.0 |
 | Date | 2026-10-22 |
 | Owner | Jagadeesh (javajaga-usa) |
 | Status | Baseline. Changes go through a pull request that updates this file, the code and the tests together. |
@@ -112,7 +112,7 @@ Each story lists the requirements that implement it (section 5 and 6). Acceptanc
 - Requirements: FR-INBOX-1..7, FR-SERVICE-1..4, DS-2, DS-3, DS-6.
 
 **US-6. Find things.** As the owner, I want to search by name, folder, year, camera and descriptive tags, and copy a selection elsewhere.
-- Requirements: FR-FIND-1..4, FR-VIEWS-1..3, FR-TAG-1..5.
+- Requirements: FR-FIND-1..6, FR-VIEWS-1..3, FR-TAG-1..6.
 
 **US-7. Know the drive is healthy.** As the owner, I want to learn about silent damage before it spreads to backups.
 - AC-7.1 A file whose content changed while its size and date did not is reported as damaged and stays flagged until restored.
@@ -229,10 +229,13 @@ Each story lists the requirements that implement it (section 5 and 6). Acceptanc
 | FR-TAG-3 | Tagging shall be resumable: only untagged files are sent unless `--retag`. | `tag.py` | `test_milestone2.py::test_tagging_is_resumable_and_feeds_rules` |
 | FR-TAG-4 | A file that fails or is declined shall not stop the others. | `tag.py` | `test_milestone2.py::test_tagging_is_resumable_and_feeds_rules` |
 | FR-TAG-5 | Tags shall be usable in rules, views, search and export. | `rules.py`, `views.py`, `library.py` | `test_milestone2.py::test_tagging_is_resumable_and_feeds_rules` |
+| FR-TAG-6 | The owner shall be able to add, remove or replace tags and the description by hand, without AI: on one or more files (`tags FILE...`), on every file a search finds (`tags --match`, after confirming), or in Explore's file details. Tags are cleaned the same way as AI tags (lowercase, no commas, at most 20), search sees the change at once, and AI tagging leaves hand-tagged files alone unless `--retag`. | `library.py`, `cli.py`, `panel.py`, `panel.html` | `test_library.py::test_tags_by_hand_from_the_command_line`, `test_library.py::test_edit_tags_limits_and_cleans`, `test_panel.py::test_explore_inbox_and_files` |
 | FR-FIND-1 | `find` shall search words in the name, folder, tags, description and camera, with type, tag and year filters. | `library.py` | `test_library.py::test_search_and_find_command` |
 | FR-FIND-2 | `stats` shall summarize by type, year, camera and tag, and the space saved. | `library.py` | `test_library.py::test_stats_and_duplicates` |
 | FR-FIND-3 | `duplicates` shall list identical sets, biggest waste first, and write them to CSV. | `library.py` | `test_library.py::test_stats_and_duplicates` |
 | FR-FIND-4 | `export` shall copy matching files elsewhere, never overwriting (a different file gets ` (2)`), without changing the library. | `library.py` | `test_library.py::test_export_copies_a_selection_without_overwriting` |
+| FR-FIND-5 | `find --on-this-day` (or `--day MM-DD`) and Explore's **On this day** button shall list the files taken (or, without a capture date, last changed) on that day of the year in any year, newest first, combined with the other filters. A malformed day is refused. | `library.py`, `cli.py`, `panel.py`, `panel.html` | `test_library.py::test_on_this_day`, `test_panel.py::test_explore_inbox_and_files` |
+| FR-FIND-6 | Explore's file details shall list the identical copies of that file that stayed in the old files (full paths, the first 50 and how many more), saying that only one went into the library. | `library.py`, `panel.py`, `panel.html` | `test_library.py::test_copies_of_a_library_file`, `test_panel.py::test_explore_inbox_and_files` |
 
 ### 5.10 Damage check, health check, undo, relocate
 

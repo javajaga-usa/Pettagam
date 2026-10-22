@@ -129,6 +129,15 @@ def main(argv=None) -> int:
     tg.add_argument("--workers", type=int, default=4)
     tg.add_argument("--yes", action="store_true", help="do not ask for confirmation")
 
+    tt = sub.add_parser("tags", help="show or change tags and descriptions by hand (no AI, no cost)")
+    tt.add_argument("files", nargs="*", help="library files (full paths, or paths inside the library)")
+    tt.add_argument("--match", metavar="WORDS", help="instead of FILES, every library file a search finds")
+    tt.add_argument("--add", default="", help="tags to add, separated by commas")
+    tt.add_argument("--remove", default="", help="tags to remove, separated by commas")
+    tt.add_argument("--set", dest="set_tags", help="replace all the tags with these (\"\" removes them all)")
+    tt.add_argument("--description", help="replace the description")
+    tt.add_argument("--yes", action="store_true", help="do not ask before changing many files")
+
     dc = sub.add_parser("doctor", help="check drives, hardlinks, free space and setup")
     dc.add_argument("--source")
     dc.add_argument("--library")
@@ -171,6 +180,8 @@ def main(argv=None) -> int:
     fd.add_argument("--type", help="category, e.g. images or documents")
     fd.add_argument("--tag")
     fd.add_argument("--year")
+    fd.add_argument("--day", metavar="MM-DD", help="taken on this day of the year, in any year, e.g. 12-25")
+    fd.add_argument("--on-this-day", action="store_true", help="taken on today's date in any year")
     fd.add_argument("--limit", type=int, default=50)
     fd.add_argument("--json", action="store_true", help="print JSON instead of paths")
 
@@ -224,7 +235,7 @@ def main(argv=None) -> int:
     except RuleError as e:
         print(f"Problem in your rules: {e}", file=sys.stderr)
         return 3
-    if args.cmd in ("apply", "inbox", "tag", "undo") and not getattr(args, "dry_run", False):
+    if args.cmd in ("apply", "inbox", "tag", "tags", "undo") and not getattr(args, "dry_run", False):
         from .maintenance import backup_catalog
         try:
             backup_catalog(con)
@@ -242,6 +253,44 @@ def _library(con, args) -> str:
 
 def _rules_path(con, args):
     return getattr(args, "rules", None) or default_path(getattr(args, "library", None) or get_meta(con, "library"))
+
+
+def _tags(con, args) -> int:
+    from .library import edit_tags, find_item, search
+    split = lambda text: [t for t in (text or "").split(",") if t.strip()]
+    if args.match is not None:
+        total = search(con, args.match, limit=0)["total"]
+        found = search(con, args.match, limit=max(total, 1))["items"]
+        items = [(it["src"], it["id"]) for it in found]
+        names = [it["dest"] for it in found]
+    else:
+        if not args.files:
+            raise SystemExit("Name library files, or use --match WORDS to change every file a search finds.")
+        items, names = [], []
+        for f in args.files:
+            it = find_item(con, f)
+            if not it:
+                print(f"{f}: not a file in the library", file=sys.stderr)
+                continue
+            items.append(it)
+            names.append(con.execute(f"SELECT dest FROM {it[0]} WHERE id=?", (it[1],)).fetchone()[0])
+    if not items:
+        print("No library files to change.", file=sys.stderr)
+        return 1
+    changing = args.add or args.remove or args.set_tags is not None or args.description is not None
+    if not changing:
+        args.dry_run = True  # only looked: no need to refresh the catalog copy
+        for (table, fid), name in zip(items, names, strict=True):
+            tags, desc = con.execute(f"SELECT tags, description FROM {table} WHERE id=?", (fid,)).fetchone()
+            print(f"{name}\n  tags: {(tags or '(none)').replace(',', ', ')}" + (f"\n  {desc}" if desc else ""))
+        return 0
+    if len(items) > 1 and not args.yes and input(f"Change the tags of {len(items):,} files? [y/N] ").lower() != "y":
+        print("Cancelled.")
+        return 1
+    n = edit_tags(con, items, tags=split(args.set_tags) if args.set_tags is not None else None,
+                  add=split(args.add), remove=split(args.remove), description=args.description)
+    print(f"Changed {n:,} of {len(items):,} files. Run pettagam views to update the by-tag folders.")
+    return 0
 
 
 def _run(con, args) -> int:
@@ -343,6 +392,8 @@ def _run(con, args) -> int:
         res = tag_library(con, _library(con, args), workers=args.workers, limit=args.limit,
                           retag=args.retag, only=args.only, model=model)
         return 1 if res["errors"] else 0
+    if args.cmd == "tags":
+        return _tags(con, args)
     if args.cmd == "doctor":
         from .doctor import print_checks, run_checks
         svc = None
@@ -414,7 +465,12 @@ def _run(con, args) -> int:
         return 0
     if args.cmd == "find":
         from .library import search
-        res = search(con, " ".join(args.words), args.type or "", args.tag or "", args.year or "", limit=args.limit)
+        day = time.strftime("%m-%d") if args.on_this_day else args.day or ""
+        try:
+            res = search(con, " ".join(args.words), args.type or "", args.tag or "", args.year or "",
+                         limit=args.limit, day=day)
+        except ValueError as e:
+            raise SystemExit(f"--day: {e}") from None
         lib = get_meta(con, "library") or ""
         if args.json:
             print(json.dumps(res, indent=2, default=str))
