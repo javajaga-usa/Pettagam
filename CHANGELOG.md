@@ -10,6 +10,7 @@ All notable changes to Pettagam. Versions follow [semantic versioning](https://s
 ### Added
 - **Word search uses a full-text index**: searching a million files for a word takes milliseconds instead of about a second. It finds the same files as before (any part of a word of 3 or more letters, ignoring case, now in every language). Existing catalogs build the index once, on first open; that takes a minute or so for a couple of million files. The health check says if your Python's SQLite can't do this (then search still works, more slowly).
 - **HTTPS for the panel on the network** (`pettagam panel --host 0.0.0.0 --tls`): with a certificate Pettagam makes for this computer once (it prints the fingerprint to check), or your own with `--tls-cert`/`--tls-key`. Plain network mode now warns that it isn't encrypted.
+- `pettagam move-plan --to /srv/ninaivu --host you@server` writes out every step and command for moving the library (and the old files, keeping hardlinks) to the Ubuntu server, optionally as two scripts. It copies nothing itself.
 - **Measure speed** button in the panel's health check runs the same timings on your folders.
 - `pettagam bench` measures scanning, reading, hardlink placing and Explore search speed on your drive against the targets in the requirements, without changing anything.
 - An MIT licence (`LICENSE`), declared in the package metadata.

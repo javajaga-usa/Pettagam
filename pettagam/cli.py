@@ -14,6 +14,7 @@
   pettagam bench [SOURCE]           measure scan, read, placing and search speed on this drive
   pettagam service on|off|status|refresh  sort the inbox automatically in the background
   pettagam undo                     take placed files back out of the library (old files untouched)
+  pettagam move-plan --to DIR       the steps and commands to move the library to another computer
   pettagam relocate                 follow the files after the drive is mounted somewhere else
   pettagam find WORDS [--tag T]     search the library by name, folder, tags, camera, type or year
   pettagam stats                    what is in the library: by type, year, camera and tag
@@ -153,6 +154,12 @@ def main(argv=None) -> int:
     un = sub.add_parser("undo", help="take placed files back out of the library; the old files are untouched")
     un.add_argument("--dry-run", action="store_true", help="only show what would be removed")
     un.add_argument("--yes", action="store_true", help="do not ask for confirmation")
+
+    mv = sub.add_parser("move-plan", help="write out the steps to move the library to another computer (copies nothing)")
+    mv.add_argument("--to", required=True, help="the folder on the new computer's drive, e.g. /srv/ninaivu")
+    mv.add_argument("--host", help="the new computer for rsync over SSH, e.g. you@server")
+    mv.add_argument("--library-only", action="store_true", help="leave the old files behind")
+    mv.add_argument("--write", metavar="DIR", help="also write the steps as two scripts into DIR")
 
     rl = sub.add_parser("relocate", help="point the catalog at the drive's new location (e.g. after moving to Ubuntu)")
     rl.add_argument("--source", help="where the old files are now")
@@ -345,6 +352,14 @@ def _run(con, args) -> int:
         except Exception:
             pass
         return print_checks(run_checks(con, args.source, args.library, args.inbox or svc, args.db))
+    if args.cmd == "move-plan":
+        from . import move
+        p = move.plan(con, args.to, args.host, library_only=args.library_only)
+        print(move.render(p), end="")
+        if args.write:
+            for path in move.write_scripts(p, args.write):
+                print(f"Wrote {path}")
+        return 0
     if args.cmd == "bench":
         from . import bench
         source = args.source or get_meta(con, "source")
