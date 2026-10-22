@@ -6,7 +6,6 @@ Optional and paid: needs `python3 -m pip install anthropic` and an API key (ANTH
 `ant auth login`). Only files without tags are sent, so it can be stopped and resumed. Files are read
 from the library, never from the old folder.
 """
-from __future__ import annotations
 
 import base64
 import json

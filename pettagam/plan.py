@@ -1,5 +1,4 @@
 """Phase 2: decide where every file goes. Writes only to the catalog, never to disk."""
-from __future__ import annotations
 
 import os
 import re
@@ -54,11 +53,12 @@ def rule_counts(con, rules) -> dict:
 def explain(path: str, rules=(), now=None) -> dict:
     """Where one file on disk would go, and why: the facts Pettagam sees and the rule or smart type that decides."""
     import time
+
     from .scan import _examine
     st = os.stat(path)
     e = _examine(os.path.dirname(os.path.abspath(path)), os.path.basename(path), st)
     row = dict(zip(("path", "name", "size", "mtime", "dev", "ino", "ext", "kind", "width", "height",
-                    "camera", "has_exif", "has_tags", "junk", "taken"), e))
+                    "camera", "has_exif", "has_tags", "junk", "taken"), e, strict=True))
     if row["junk"]:
         return {"file": path, "junk": row["junk"], "folder": None, "rule": None}
     r, folder, rule = decide(row, rules, now)
@@ -152,7 +152,7 @@ def plan(con, library: str, split_at: int = SPLIT_AT, rules=(), progress=print) 
     for folder, items in folders.items():
         names = _dedupe_names([n for _, n in items])
         subs = _split(names, split_at)
-        for (fid, _), n in zip(items, names):
+        for (fid, _), n in zip(items, names, strict=True):
             con.execute("UPDATE files SET folder=?, dest=?, action='place', status=NULL WHERE id=?",
                         (folder, f"{folder}/{subs[n]}{n}", fid))
     con.commit()

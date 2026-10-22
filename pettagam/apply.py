@@ -4,7 +4,6 @@ Same filesystem: hardlink (instant, no extra space). Otherwise: copy to a .part 
 check its size, then give it its name. Never replaces a file already in the library.
 Resumable: files already marked done are skipped; an existing identical destination counts as done.
 """
-from __future__ import annotations
 
 import csv
 import os

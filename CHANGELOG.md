@@ -4,13 +4,23 @@ All notable changes to Pettagam. Versions follow [semantic versioning](https://s
 
 ## [Unreleased]
 
+### Breaking
+- **Python 3.13 or newer is now required** (it was 3.9). On the Mac, install Python from python.org or Homebrew; on Ubuntu 24.04, from the deadsnakes PPA. An older Python stops with a message saying what to install. Run Setup Pettagam (or `launchers/setup-ubuntu.sh`) again after updating: Pettagam now always runs from its own `.venv` beside the code, so the app, the `pettagam` command and the background job use the same Python. Setup finds Python where python.org and Homebrew install it even when Terminal's `python3` is still Apple's 3.9. Setup also moves a background inbox job that was set up with the old Python onto the new one (`pettagam service refresh`), and the health check flags one that wasn't.
+
 ### Added
+- **HTTPS for the panel on the network** (`pettagam panel --host 0.0.0.0 --tls`): with a certificate Pettagam makes for this computer once (it prints the fingerprint to check), or your own with `--tls-cert`/`--tls-key`. Plain network mode now warns that it isn't encrypted.
+- `pettagam bench` measures scanning, reading, hardlink placing and Explore search speed on your drive against the targets in the requirements, without changing anything.
+- An MIT licence (`LICENSE`), declared in the package metadata.
 - **Requirements specification** ([docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)): user stories with acceptance criteria, functional, data-safety, security, privacy, performance and platform requirements, each traced to the code and the test that checks it, plus the audit's findings and open items. `tests/test_requirements.py` fails if the document names a test that doesn't exist.
 - `pettagam verify --full` checksums every copied file instead of a sample.
 - The health check shows the library drive's format, warns when it can't make hardlinks, and notes that Ubuntu can't write APFS.
 - `SECURITY.md`.
 
 ### Changed
+- The panel works with the keyboard and screen readers: folders, library tiles and tags are real buttons, fields have names, focus is always visible, the tabs follow the arrow keys, results are announced, and a few light-mode colours were darkened to be easier to read (WCAG 2.2 AA).
+- Explore opens much faster on big libraries: the newest files come from an index instead of sorting everything (a million files: 2.3 s before, under 0.05 s now), and searches read the placed and inbox files separately.
+- The catalog has a version number. Opening an older catalog keeps a copy of it (`pettagam.db.v0.bak`) and then upgrades it; a catalog from a newer Pettagam is refused unchanged instead of being half-understood (this also protects `relocate` from a newer drive copy). The upgrade adds an index that makes `pettagam duplicates` much faster on big collections.
+- CI lints the code with `ruff` and checks that the shell scripts parse; the code uses Python 3.13 syntax throughout.
 - Copies (placing across drives, inbox, undo, export) are flushed to the disk and checked before they get their name, and an inbox file is removed only after that. Moves and copies never replace an existing file, even one that appears at the last moment.
 - Placing, inbox sorting and undo share one lock per library, so they never run at the same time (the lock file is now `_meta/library.lock`).
 - The panel only answers requests addressed to this computer (stops DNS-rebinding attacks from websites), accepts only JSON up to 2 MB, checks settings, and sends security headers. Library files it shows run in a sandbox, so an HTML or SVG file with scripts can't act as the panel.

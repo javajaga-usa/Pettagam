@@ -2,25 +2,23 @@
 
 Stdlib only, so it runs the same on macOS and Ubuntu. Reads at most HEAD_BYTES per file.
 """
-from __future__ import annotations
 
 import calendar
 import struct
 from dataclasses import dataclass
-from typing import Optional
 
 HEAD_BYTES = 64 * 1024  # JPEG EXIF (APP1) is at most 64 KB
 
 
 @dataclass
 class Sniff:
-    kind: Optional[str] = None      # canonical extension of the detected format, e.g. "jpg"
-    width: Optional[int] = None
-    height: Optional[int] = None
-    camera: Optional[str] = None    # "Make Model" from EXIF, when present
+    kind: str | None = None        # canonical extension of the detected format, e.g. "jpg"
+    width: int | None = None
+    height: int | None = None
+    camera: str | None = None      # "Make Model" from EXIF, when present
     has_exif: bool = False
-    has_tags: bool = False          # audio has artist/title tags
-    taken: Optional[float] = None   # EXIF capture time (DateTimeOriginal, else DateTime), as epoch seconds
+    has_tags: bool = False         # audio has artist/title tags
+    taken: float | None = None     # EXIF capture time (DateTimeOriginal, else DateTime), as epoch seconds
 
 
 def sniff_file(path: str) -> Sniff:
@@ -110,7 +108,7 @@ def _jpeg(b: bytes) -> Sniff:
     return s
 
 
-def _exif_time(text: str) -> Optional[float]:
+def _exif_time(text: str) -> float | None:
     """'2021:07:04 18:30:00' -> epoch seconds. EXIF has no time zone, so it is read as UTC."""
     try:
         y, mo, d = int(text[0:4]), int(text[5:7]), int(text[8:10])

@@ -17,7 +17,9 @@ After the one-time cleanup it keeps the library tidy:
 
 ## Requirements
 
-- Python 3.9 or newer. It's already on macOS (run `python3 --version`; if asked, install the Command Line Tools) and on Ubuntu.
+- Python 3.13 or newer, and nothing else: Pettagam uses only what is built into Python.
+  - **Mac:** the Python in Apple's Command Line Tools is 3.9, too old. Install the latest from [python.org](https://www.python.org/downloads/macos/) (or `brew install python`). Setup finds it even if Terminal's `python3` is still the old one.
+  - **Ubuntu:** 24.04 comes with 3.12. Add 3.13 beside it with `sudo add-apt-repository ppa:deadsnakes/ppa && sudo apt install python3.13 python3.13-venv`; newer Ubuntu releases include it.
 - No other packages are needed. Two optional extras:
   - faster duplicate checks on big libraries: `python3 -m pip install ".[fast]"` (the `xxhash` library)
   - AI tagging: `python3 -m pip install ".[ai]"` (the `anthropic` library) and an Anthropic API key (see [AI tagging](#ai-tagging))
@@ -27,20 +29,20 @@ The full list of what Pettagam must do, how each requirement is tested, and what
 
 ## Install
 
-**On the Mac (no typing):** double-click **`Setup Pettagam.command`** in this folder. It finds Python, offers to set up AI tagging, and puts a **Pettagam** app in your Applications folder, built on your Mac so macOS doesn't block it. From then on, open Pettagam from Launchpad or Spotlight. (If macOS refuses to open the setup file itself the first time, open **System Settings → Privacy & Security** and press **Open Anyway** next to it.)
+**On the Mac (no typing):** double-click **`Setup Pettagam.command`** in this folder. It finds Python 3.13 (or opens the python.org download page), sets Pettagam up in a `.venv` folder beside itself, offers AI tagging, and puts a **Pettagam** app in your Applications folder, built on your Mac so macOS doesn't block it. From then on, open Pettagam from Launchpad or Spotlight. (If macOS refuses to open the setup file itself the first time, open **System Settings → Privacy & Security** and press **Open Anyway** next to it.)
 
-**On Ubuntu:** run `./launchers/setup-ubuntu.sh` (add `--ai` for AI tagging). It adds a `pettagam` command, and a menu entry on a desktop.
+**On Ubuntu:** run `./launchers/setup-ubuntu.sh` (add `--ai` for AI tagging). It finds Python 3.13, sets Pettagam up in a `.venv` beside the code, and adds a `pettagam` command, and a menu entry on a desktop.
 
 **Or with pip, anywhere:**
 
 ```
 cd pettagam
-python3 -m pip install --user .
+python3.13 -m pip install --user .
 ```
 
 You now have a `pettagam` command. If your shell can't find it, run `python3 -m pettagam` from this folder instead.
 
-To remove Pettagam, double-click **`Uninstall Pettagam.command`** (it also works on Linux: `bash "Uninstall Pettagam.command"`). It removes the app, the background inbox job and the AI-tagging libraries, and asks before removing your settings and catalog. Your old files, the library and the inbox are never touched.
+To remove Pettagam, double-click **`Uninstall Pettagam.command`** (it also works on Linux: `bash "Uninstall Pettagam.command"`). It removes the app, the background inbox job and Pettagam's `.venv`, and asks before removing your settings and catalog. Your old files, the library and the inbox are never touched.
 
 ## The panel
 
@@ -56,7 +58,13 @@ The **Explore library** tab shows every file in the library, newest first, with 
 
 The panel remembers your folders, shows live progress, and keeps its catalog in `~/.pettagam/` on your internal drive. To stop it, close the Terminal window that opened with it.
 
-**On Ubuntu Server (no screen):** the safest way is an SSH tunnel. Run the panel normally on the server (`launchers/pettagam-panel.sh --no-browser`), then on your laptop run `ssh -L 8484:localhost:8484 you@server` and open <http://localhost:8484/>. Everything travels encrypted inside SSH. Alternatively, `--host 0.0.0.0` makes the panel reachable from your network: the link it prints carries a secret token, so only people with the link can use it, but the connection is plain HTTP, so use this only on a home network you trust.
+**On Ubuntu Server (no screen):** the safest way is an SSH tunnel. Run the panel normally on the server (`launchers/pettagam-panel.sh --no-browser`), then on your laptop run `ssh -L 8484:localhost:8484 you@server` and open <http://localhost:8484/>. Everything travels encrypted inside SSH. Alternatively, `--host 0.0.0.0` makes the panel reachable from your network: the link it prints carries a secret token, so only people with the link can use it, and adding `--tls` encrypts it:
+
+```
+launchers/pettagam-panel.sh --host 0.0.0.0 --no-browser --tls
+```
+
+The first time, Pettagam makes a certificate for this computer (kept in `~/.pettagam/tls/`) and prints its SHA-256 fingerprint. Browsers don't know a home-made certificate, so they warn once: check that the fingerprint they show matches, then continue. If you have a certificate of your own (for example from your router or a reverse proxy), use `--tls-cert FILE --tls-key FILE` instead. Without `--tls` the connection is plain HTTP, and the panel says so.
 
 ## Use it from the command line
 
@@ -221,6 +229,14 @@ Export only reads the library. A file that is already there is skipped, and a di
 
 `find` prints full paths, so `pettagam find --tag invoice | head` works with other tools. `duplicates` only lists files. Nothing is deleted, and only one copy of each set went into the library. The Explore tab in the panel shows the same summary as `stats`.
 
+## Measuring speed
+
+```
+pettagam bench "/Volumes/N300/Old files" --library /Volumes/N300/Pettagam
+```
+
+Times how fast this computer and drive scan files, read them, make hardlinks and search a library of a million files, each against the target in [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) (OK or SLOW). The old files are only read; the hardlink test uses its own small files in the library's `_meta` folder and removes them. Without arguments it uses the folders from the last dry run. Run it just after plugging in the drive: later runs are faster because the computer remembers what it read. `--json` prints the numbers for keeping.
+
 ## Health check
 
 ```
@@ -248,7 +264,7 @@ pettagam service status
 pettagam service off
 ```
 
-This sorts the inbox in the background, even with the panel closed and after a restart: as soon as something lands in the inbox, and every 5 minutes (`--every SECONDS`) to pick up files that were still being copied. On a Mac it's a LaunchAgent (`~/Library/LaunchAgents/local.pettagam.inbox.plist`). On Ubuntu it's a systemd user timer and path watch (`~/.config/systemd/user/pettagam-inbox.*`). The weekly damage check runs beside it as `local.pettagam.fixity` or `pettagam-fixity.timer`, and `service off` stops both. What it does is logged in `~/.pettagam/inbox-service.log`, and a desktop notification says when files were filed (`--quiet` turns that off; on Ubuntu it uses `notify-send` when there is a desktop). The first time it reaches an external drive, macOS may ask whether Python may access files on a removable volume: allow it. On an Ubuntu server, run `loginctl enable-linger` once so it keeps running when you're logged out.
+This sorts the inbox in the background, even with the panel closed and after a restart: as soon as something lands in the inbox, and every 5 minutes (`--every SECONDS`) to pick up files that were still being copied. On a Mac it's a LaunchAgent (`~/Library/LaunchAgents/local.pettagam.inbox.plist`). On Ubuntu it's a systemd user timer and path watch (`~/.config/systemd/user/pettagam-inbox.*`). The weekly damage check runs beside it as `local.pettagam.fixity` or `pettagam-fixity.timer`, and `service off` stops both. What it does is logged in `~/.pettagam/inbox-service.log`, and a desktop notification says when files were filed (`--quiet` turns that off; on Ubuntu it uses `notify-send` when there is a desktop). The first time it reaches an external drive, macOS may ask whether Python may access files on a removable volume: allow it. On an Ubuntu server, run `loginctl enable-linger` once so it keeps running when you're logged out. The job remembers which Python started it; after installing a newer Python, `pettagam service refresh` (which setup runs for you) moves it over.
 
 ## Undo
 
@@ -293,6 +309,11 @@ See [SECURITY.md](SECURITY.md) for how to report a problem.
 ```
 python3 -m pip install -e ".[dev]"
 python3 -m pytest
+ruff check .
 ```
 
-Requirements, with the test that checks each one, are in [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md); a change in behaviour updates that file, the tests and [CHANGELOG.md](CHANGELOG.md) together. CI runs the tests on macOS and Ubuntu with Python 3.9, 3.12 and 3.13 (and once with the optional extras) for every pull request, and checks that the built package installs. To release, update the version in `pettagam/__init__.py` (the package reads it from there), add a CHANGELOG section, and push a tag such as `v0.4.0`: the release workflow tests it, builds the package, and publishes a GitHub release with that CHANGELOG section as its notes.
+Requirements, with the test that checks each one, are in [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md); a change in behaviour updates that file, the tests and [CHANGELOG.md](CHANGELOG.md) together. CI runs the tests on macOS and Ubuntu with Python 3.13 and 3.14 (and once with the optional extras) for every pull request, and checks that the built package installs. To release, update the version in `pettagam/__init__.py` (the package reads it from there), add a CHANGELOG section, and push a tag such as `v0.4.0`: the release workflow tests it, builds the package, and publishes a GitHub release with that CHANGELOG section as its notes.
+
+## Licence
+
+MIT: see [LICENSE](LICENSE).

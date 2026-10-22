@@ -54,7 +54,7 @@ The guiding principle, which overrides any other requirement it conflicts with: 
 | Computer | Mac (Apple silicon or Intel), a current macOS release | Ubuntu 24.04 LTS server or desktop |
 | Drive | Toshiba N300 Pro hard drive (7,200 rpm, CMR), USB or Thunderbolt enclosure, mounted under `/Volumes/` | Same drive or its successor, mounted under `/srv/ninaivu/` |
 | Drive format | APFS (hardlinks work) | ext4 (see PLAT-6: Ubuntu cannot write APFS) |
-| Python | 3.9 from the macOS Command Line Tools, or newer | 3.12 (Ubuntu 24.04) |
+| Python | 3.13 or newer, from python.org or Homebrew (the 3.9 in the Command Line Tools is too old) | 3.13 or newer (Ubuntu 24.04 ships 3.12, so 3.13 comes from the deadsnakes PPA or a newer Ubuntu) |
 | Collection size (assumed design point, to confirm) | Up to 2 million files and 8 TB | Same |
 | Catalog | `~/.pettagam/pettagam.db` on the internal SSD, with a copy in `<library>/_meta/catalog.db` | Same |
 
@@ -251,6 +251,7 @@ Each story lists the requirements that implement it (section 5 and 6). Acceptanc
 | FR-MOVE-1 | A copy of the catalog shall be kept at `<library>/_meta/catalog.db`, refreshed after placing, inbox passes, tagging and undo. | `maintenance.py` | `test_maintenance.py::test_catalog_copy_travels_and_relocate_restores_it` |
 | FR-MOVE-2 | `relocate` shall restore a catalog from that copy and point it at new source and library roots, then spot-check files. | `maintenance.py` | `test_maintenance.py::test_catalog_copy_travels_and_relocate_restores_it` |
 | FR-MOVE-3 | Paths inside the catalog shall be relative to the source and library roots. | `db.py` | `test_maintenance.py::test_catalog_copy_travels_and_relocate_restores_it` |
+| FR-BENCH-1 | `pettagam bench [SOURCE] [--library LIB]` shall time the scan (files per second), sequential reading (MB/s), hardlink placing (files per second) and Explore search over a made-up catalog of a million files, and show each against its target (PERF-1, 2, 4). It shall only read the old files, make its test files only in a temporary folder under `<library>/_meta/` and remove it, and record the numbers in the catalog (`bench_last`). | `bench.py`, `cli.py` | `test_bench.py::test_bench_reads_old_files_only_and_cleans_up`, `test_bench.py::test_bench_reports_a_drive_without_hardlinks`, `test_bench.py::test_bench_command_records_the_numbers` |
 
 ### 5.11 Panel and install
 
@@ -281,6 +282,7 @@ Each story lists the requirements that implement it (section 5 and 6). Acceptanc
 | DS-6 | Only one writer at a time per library (FR-APPLY-5). | `safeio.py` | `test_safety.py::test_apply_and_undo_wait_for_the_library_lock` |
 | DS-7 | The catalog shall survive a crash (SQLite WAL) and be backed up with the library (FR-MOVE-1). An older catalog shall be upgraded in place on first open. | `db.py`, `maintenance.py` | `test_milestone2.py::test_old_catalog_gets_new_columns` |
 | DS-8 | Silent damage to library files shall be detectable (FR-FIX-1..4). | `fixity.py` | `test_library.py::test_fixity_finds_silent_damage_but_not_edits` |
+| DS-9 | The catalog shall carry a layout version (`PRAGMA user_version`). Opening an older catalog shall first save a copy of it (`<catalog>.v<N>.bak`) and then upgrade it in one transaction, step by step. A catalog from a newer Pettagam shall be refused without being changed, including when relocating from the copy that travelled with the drive. | `db.py`, `maintenance.py` | `test_catalog.py::test_new_catalog_gets_the_current_version`, `test_catalog.py::test_old_catalog_is_upgraded_with_a_backup_and_keeps_its_data`, `test_catalog.py::test_catalog_from_a_newer_pettagam_is_refused_untouched`, `test_catalog.py::test_every_version_has_an_upgrade_step` |
 
 ### 6.2 Security
 
@@ -297,6 +299,7 @@ Threat model: Pettagam runs as the owner on their own computer. The panel is a w
 | SEC-7 | Library files served by the panel shall be confined to the library (no `..` or symlink escape) and, apart from PDFs, served in a CSP sandbox so a hostile HTML or SVG file can't act as the panel. | `panel.py` | `test_safety.py::test_panel_headers_and_sandboxed_library_files`, `test_panel.py::test_explore_inbox_and_files` |
 | SEC-8 | Rule templates shall not be able to write outside the library (FR-RULES-2). | `rules.py` | `test_milestone2.py::test_rules_validate_with_clear_messages` |
 | SEC-9 | Background jobs shall run as the user, never as root, with low CPU and I/O priority. | `service.py` | `test_requirements.py::test_background_jobs_run_at_low_priority_as_the_user` |
+| SEC-10 | In network mode the panel should be served over HTTPS (`--tls`): with the owner's certificate (`--tls-cert`, `--tls-key`), or one Pettagam makes once with `openssl` and keeps in `~/.pettagam/tls/` (key readable by the owner only), printing its SHA-256 fingerprint to check against the browser's warning. TLS 1.2 or newer; the token cookie is then `Secure`; plain HTTP to that port gets no answer; the handshake happens per connection so an idle client can't block others. Without TLS on the network, the panel shall say the connection is not encrypted. | `panel.py`, `cli.py` | `test_safety.py::test_panel_over_https_for_the_network`, `test_safety.py::test_panel_tls_needs_both_files` |
 
 ### 6.3 Privacy
 
@@ -313,10 +316,11 @@ Threat model: Pettagam runs as the owner on their own computer. The panel is a w
 | --- | --- | --- |
 | REL-1 | Every long step (scan, apply, inbox, tag, fixity) shall be safe to interrupt and run again. | `test_pipeline.py::test_apply_link_and_verify`, `test_library.py::test_fixity_slices_and_missing` |
 | REL-2 | One unreadable file shall be recorded as an error and shall not stop the others. | `test_pipeline.py::test_existing_different_file_is_never_overwritten` |
-| PERF-1 | The scan should examine at least 1,000 files per second on the N300 Pro with 2 workers and the catalog on the SSD. | Not yet measured (gap G-12) |
-| PERF-2 | Hardlink placement should run at least 2,000 files per second on the same drive. | Not yet measured (gap G-12) |
+| PERF-1 | The scan should examine at least 1,000 files per second on the N300 Pro with 2 workers and the catalog on the SSD. | `pettagam bench` (FR-BENCH-1); N300 number still to record (gap G-12) |
+| PERF-2 | Hardlink placement should run at least 2,000 files per second on the same drive. | `pettagam bench`; N300 number still to record (gap G-12) |
 | PERF-3 | Duplicate detection shall read in full only files that share both size and a 64 KB sample with another file. | `test_library.py::test_stats_and_duplicates` |
-| PERF-4 | The panel's Explore tab should answer a search over 1 million files in under 1 second. | Not yet measured (gap G-12) |
+| PERF-4 | The panel's Explore tab should answer a search over 1 million files in under 1 second. | `pettagam bench`; `test_bench.py::test_search_over_many_files_is_quick` (100,000 files in CI). In the build container, 1 million files: opening view 0.02-0.04 s, word searches 0.5-1.0 s |
+| PERF-6 | Explore's opening view (newest first) shall come from an index, not by sorting the whole library, and placed and inbox files shall be merged in date order with pages that join up. | `test_bench.py::test_newest_first_uses_the_index`, `test_bench.py::test_search_merges_placed_and_inbox_files_newest_first` |
 | PERF-5 | The background jobs shall run at low priority (`Nice=10`, idle I/O) so they don't slow the computer. | `test_requirements.py::test_background_jobs_run_at_low_priority_as_the_user` |
 
 ### 6.5 Usability
@@ -327,6 +331,7 @@ Threat model: Pettagam runs as the owner on their own computer. The panel is a w
 | USE-2 | Everything the owner needs day to day shall be possible from the panel, without a Terminal. | `test_panel.py::test_full_flow_through_panel` |
 | USE-3 | Installing and removing shall each be one double-click on the Mac. | `test_launchers.py::test_setup_builds_the_app_and_uninstall_removes_it_but_never_files` |
 | USE-4 | The panel should work on a phone-sized screen and be usable by keyboard. | Manual; keyboard and screen-reader use not yet audited (gap G-14) |
+| USE-6 | The panel should meet WCAG 2.2 AA for keyboard and screen-reader use: every control is a real button, link or labelled field (reachable with Tab, used with Enter or Space), focus is always visible, the tabs follow the ARIA tab pattern (arrow keys), status and results are announced (`aria-live`), dialogs are named, a skip link leads past the header, and text colours have at least 4.5:1 contrast in light and dark mode. | `test_panel.py::test_panel_controls_have_names_and_work_from_the_keyboard`, `test_panel.py::test_panel_text_colours_are_readable`; checked by hand in Chromium with the keyboard only |
 
 ### 6.6 Maintainability
 
@@ -334,8 +339,10 @@ Threat model: Pettagam runs as the owner on their own computer. The panel is a w
 | --- | --- | --- |
 | MAINT-1 | The core shall use the Python standard library only; extra packages shall be optional extras (`fast`, `ai`). | `pyproject.toml`; CI runs the tests with and without the extras |
 | MAINT-2 | Every requirement shall be verified by an automated test where practical, and `tests/test_requirements.py` shall check that the tests this document names exist. | `test_requirements.py::test_every_named_test_exists` |
-| MAINT-3 | CI shall run the tests on macOS and Ubuntu with Python 3.9, 3.12 and 3.13 for every pull request, and build and install the package. | `.github/workflows/tests.yml` |
+| MAINT-3 | CI shall run the tests on macOS and Ubuntu with Python 3.13 (the minimum) and 3.14 for every pull request, and build and install the package. | `.github/workflows/tests.yml` |
 | MAINT-4 | The version shall be defined once (`pettagam/__init__.py`); releases are made by pushing a matching `v*` tag, with notes from `CHANGELOG.md`. | `.github/workflows/release.yml` |
+| MAINT-6 | CI shall lint the code with `ruff` (pyflakes, bugbear, modern 3.13 syntax, sorted imports; settings in `pyproject.toml`) and check that every shell script parses. | `.github/workflows/tests.yml` (job `lint`) |
+| MAINT-5 | The code shall carry a licence (MIT) in `LICENSE`, declared in the package metadata. | `test_requirements.py::test_licence_is_declared` |
 
 ## 7. Software and platform requirements
 
@@ -343,7 +350,7 @@ Threat model: Pettagam runs as the owner on their own computer. The panel is a w
 
 | Package | Needed for | Version | Where it is declared |
 | --- | --- | --- | --- |
-| Python | everything | 3.9 or newer (tested on 3.9, 3.12, 3.13) | `pyproject.toml` `requires-python` |
+| Python | everything | 3.13 or newer (tested on 3.13 and 3.14) | `pyproject.toml` `requires-python`, `pettagam.MIN_PYTHON`, `launchers/find-python.sh` |
 | SQLite | the catalog | the one built into Python | n/a |
 | `xxhash` | optional, faster hashing | `>=3,<5` | extra `fast` |
 | `anthropic` | optional, AI tagging | `>=1,<3` (uses `output_config` and the server-side fallback beta, present since 1.0; tested with 2.1) | extra `ai` |
@@ -362,6 +369,7 @@ Upper bounds stop a future major version of an optional library from breaking Pe
 | PLAT-3 | HEIC and RAW previews for AI tagging use macOS `sips`; on Ubuntu those files are skipped. |
 | PLAT-4 | Background sorting uses launchd on macOS and systemd user units on Ubuntu; on a headless Ubuntu server `loginctl enable-linger` is required. |
 | PLAT-5 | Paths shall be valid on Windows/Samba clients (no `\ / : * ? " < > |` or control characters in names), so the library can be shared from the Ubuntu server. |
+| PLAT-7 | Pettagam shall require Python 3.13 or newer and say so clearly on an older one. The setup scripts shall find a new enough Python (also where python.org and Homebrew install it, which a double-clicked app can't see on its PATH), and Pettagam shall run from its own `.venv` so the app, the command and the background job use that Python whatever else is installed. The minimum shall be stated the same way in every place. Verified by `test_requirements.py::test_python_minimum_is_the_same_everywhere`, `test_launchers.py::test_python_finder_needs_3_13_and_prefers_the_venv`. A background job set up with an older Python shall be moved to the new one by setup (`pettagam service refresh`), and the health check shall flag one that still uses an old Python: `test_maintenance.py::test_service_refresh_moves_the_job_to_this_python`, `test_maintenance.py::test_doctor_flags_a_background_job_on_an_old_python`. |
 | PLAT-6 | Ubuntu can't write to APFS. Moving the library to Ubuntu means copying it to an ext4 drive with hardlinks preserved (`rsync -aH`, or the library alone if the old files stay on the Mac) and then running `relocate`. The README describes this. |
 
 ## 8. Constraints, assumptions and out of scope
@@ -394,17 +402,22 @@ The audit compared the 0.3.0 code, tests and README against the requirements abo
 | G-15 | Packaging: version defined twice, no metadata (readme, classifiers, URLs), optional extras without upper bounds, no `all` extra, `build` missing from dev, CI not testing 3.13, the extras, or the built wheel. | Low | `pyproject.toml` and CI updated. | MAINT-1, MAINT-3, MAINT-4 |
 | G-16 | No written requirements and no traceability. Four requirements had no test (review folder, health check changing nothing, background priority, how much of a text file tagging sends). | Medium | This document, `tests/test_requirements.py`, and tests for those four. | MAINT-2 |
 
-### 9.2 Still open
+### 9.2 Resolved after the audit
+
+| Gap | Decision or fix | Requirement |
+| --- | --- | --- |
+| G-18 | Python 3.9 had reached its end of life. The owner chose 3.13 as the minimum (2026-10-22). `requires-python = ">=3.13"`, CI tests 3.13 and 3.14, the setup scripts find 3.13 or point to python.org (Mac) or the deadsnakes PPA (Ubuntu 24.04), and Pettagam runs from its own `.venv`. | PLAT-7, MAINT-3 |
+| G-17 | No licence. Chose MIT, the usual licence for a personal tool: anyone may use and change the code if they keep the copyright notice, with no warranty. `LICENSE`, and `license = "MIT"` in `pyproject.toml` so the built package says so. If the repository should stay closed instead, delete `LICENSE` and the two `license` lines. | MAINT-5 |
+| G-20 | CI now runs `ruff check` (pinned version) and parses every shell script. The code was brought up to date for 3.13 on the way (`X \| None` instead of `Optional`, no `from __future__` imports, `zip(strict=True)` where lengths must match). Type checking with `mypy` is left out for now: the code has few annotations, so it would find little. | MAINT-6 |
+| G-19 | The catalog has a layout version (now 2) with numbered upgrade steps; an upgrade keeps a copy of the catalog as it was, and a newer catalog is refused. Version 2 adds an index that makes `duplicates` fast on large collections. | DS-9 |
+| G-13 | Network mode was plain HTTP. `pettagam panel --host 0.0.0.0 --tls` now serves HTTPS with a certificate made for this computer (or your own), and plain network mode warns that it isn't encrypted. The SSH tunnel stays the simplest choice for one person. | SEC-10 |
+| G-14 | The panel was checked for keyboard-only and screen-reader use and fixed: folder lists, library tiles and tags were clickable boxes a keyboard couldn't reach (now buttons), search fields and menus had no names, there was no visible focus or skip link, results weren't announced, the Open button was a button inside a link, and four light-mode colours were below 4.5:1 contrast. | USE-6 |
+
+### 9.3 Still open
 
 | Gap | Finding | Recommendation | Owner decision needed? |
 | --- | --- | --- | --- |
-| G-12 | Performance targets (PERF-1, 2, 4) have never been measured on the N300 Pro. | Time a dry run and placement of a real subset on the Mac and record the numbers here. | No |
-| G-13 | Network mode is plain HTTP: the token crosses the home network unencrypted. | Use the panel over an SSH tunnel (`ssh -L 8484:localhost:8484 server`) instead of `--host 0.0.0.0`, or put it behind a TLS reverse proxy. | No, but note it before using network mode |
-| G-14 | The panel has not been checked for keyboard-only and screen-reader use. | Audit against WCAG 2.2 AA when the panel next changes. | No |
-| G-17 | No licence file. Without one, nobody else may legally use or change the code. | Choose a licence (MIT is the usual choice for a personal tool), or keep the repository private. | Yes |
-| G-18 | Python 3.9 reached its upstream end of life in October 2025 and gets no security fixes. It is kept because it is what the macOS Command Line Tools provide. | Raise `requires-python` to 3.10 once the Mac uses Python from python.org or Homebrew. | Yes, when convenient |
-| G-19 | The catalog has no schema version number; upgrades rely on adding missing columns. | Add `PRAGMA user_version` with the first change that needs more than new columns. | No |
-| G-20 | No linting or type checking in CI. | Add `ruff` (and optionally `mypy`) as a CI step. | No |
+| G-12 | Performance targets (PERF-1, 2, 4) have not been measured on the N300 Pro yet. `pettagam bench` now measures all three; it found that Explore's opening view took 2.3 s over a million files (fixed with an index: 0.03 s). Word searches over a million files take 0.5-1.0 s, close to the target. | Run `pettagam bench "/Volumes/N300/Old files" --library /Volumes/N300/Pettagam` once, just after plugging in the drive, and paste the numbers here. If word searches are too slow on the Mac, the next step is an SQLite full-text index. | No |
 
 ## 10. Verification and change control
 

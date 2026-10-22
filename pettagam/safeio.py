@@ -5,7 +5,6 @@
 - A move or copy never replaces a file that is already there, even if one appears at the last moment.
 - One step at a time writes to a library: placing, inbox sorting and undo take the same lock.
 """
-from __future__ import annotations
 
 import errno
 import os

@@ -3,6 +3,7 @@ library, a private settings folder, a bounded background log, and a panel that o
 import errno
 import json
 import os
+import shutil
 import stat
 import urllib.error
 import urllib.request
@@ -13,10 +14,10 @@ from pettagam import cli, doctor, panel, safeio, service
 from pettagam.apply import apply
 from pettagam.maintenance import undo
 from pettagam.verify import verify
+
 from test_maintenance import placed  # noqa: F401  (fixture)
 from test_panel import call, server, wait_job  # noqa: F401  (fixture)
 from test_pipeline import jpeg, quiet, run_all, write
-
 
 # --- careful file operations ---------------------------------------------------
 
@@ -260,3 +261,48 @@ def test_drive_format_advice():
     assert doctor.drive_format_check(None)["status"] == "ok"
     fs = doctor.filesystem("/")
     assert fs is None or isinstance(fs, str)
+
+
+@pytest.mark.skipif(not shutil.which("openssl"), reason="needs openssl to make a certificate")
+def test_panel_over_https_for_the_network(tmp_path, monkeypatch):  # SEC-10
+    import ssl
+    import threading
+    monkeypatch.setattr(panel, "HOME", str(tmp_path / "home"))
+    cert, key = panel.self_signed()
+    assert stat.S_IMODE(os.stat(key).st_mode) & 0o077 == 0  # the key is yours only
+    assert panel.self_signed() == (cert, key)  # made once, so the fingerprint stays the same
+    assert len(panel.fingerprint(cert).split(":")) == 32
+
+    monkeypatch.setattr(panel.Handler, "token", "s3cret")
+    monkeypatch.setattr(panel.Handler, "secure", True)
+    httpd = panel.make_server("127.0.0.1", 0, cert, key)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    port = httpd.server_address[1]
+    try:
+        ctx = ssl.create_default_context(cafile=cert)
+        ctx.check_hostname = False  # the certificate names this computer, the test connects by IP
+        with urllib.request.urlopen(f"https://127.0.0.1:{port}/?token=s3cret", context=ctx, timeout=10) as r:
+            assert r.status == 200
+            cookie = r.headers["Set-Cookie"]
+            assert "Secure" in cookie and "HttpOnly" in cookie
+        with pytest.raises(urllib.error.HTTPError) as e:  # still needs the token
+            urllib.request.urlopen(f"https://127.0.0.1:{port}/api/state", context=ctx, timeout=10)
+        assert e.value.code == 403
+        with pytest.raises((urllib.error.URLError, ConnectionError, OSError)):  # plain HTTP gets nothing
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/?token=s3cret", timeout=10).read()
+        # A client that connects and says nothing doesn't block the others.
+        import socket
+        idle = socket.create_connection(("127.0.0.1", port))
+        with urllib.request.urlopen(f"https://127.0.0.1:{port}/?token=s3cret", context=ctx, timeout=10) as r:
+            assert r.status == 200
+        idle.close()
+    finally:
+        httpd.shutdown()
+
+
+def test_panel_tls_needs_both_files(tmp_path, monkeypatch):  # SEC-10
+    monkeypatch.setattr(panel, "HOME", str(tmp_path / "home"))
+    with pytest.raises(SystemExit, match="both"):
+        panel.serve("0.0.0.0", 0, open_browser=False, cert=str(tmp_path / "c.pem"))
+    with pytest.raises(SystemExit, match="certificate"):
+        panel.tls_context(str(tmp_path / "missing.pem"), str(tmp_path / "missing.key"))

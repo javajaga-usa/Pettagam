@@ -1,5 +1,4 @@
 """Dry-run outputs: a readable summary (report.md) and the full placement list (plan.csv)."""
-from __future__ import annotations
 
 import csv
 import os

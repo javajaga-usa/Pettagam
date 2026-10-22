@@ -1,5 +1,4 @@
 """Sync checks: did every file make it, is every copy identical, has the source changed since the scan."""
-from __future__ import annotations
 
 import os
 import random

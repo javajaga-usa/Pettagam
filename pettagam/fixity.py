@@ -5,7 +5,6 @@ compare. A file whose content changed while its size and date did not is reporte
 is what a failing disk looks like, as opposed to a file someone edited. Checks can run in slices
 (--minutes), oldest-checked first, so a large drive gets covered over a few nights.
 """
-from __future__ import annotations
 
 import os
 import time

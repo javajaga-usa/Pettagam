@@ -6,14 +6,13 @@ Views use the same conditions as rules (see rules.py) and are read from <library
 without that file the built-in views below are used. Unlike rules, a file appears in every view it
 matches. The views folder is Pettagam's: it is rebuilt each time, so don't keep your own files there.
 """
-from __future__ import annotations
 
 import json
 import os
 import re
 
 from .classify import normalize_ext
-from .rules import RuleError, Rule, _check_template, compile_cond, facts, matches, render
+from .rules import Rule, RuleError, _check_template, compile_cond, facts, matches, render
 
 VIEWS_DIR = "views"
 VIEWS_FILE = os.path.join("_meta", "views.json")

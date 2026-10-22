@@ -1,5 +1,4 @@
 """Exact-duplicate detection. Only files sharing a size are read, first a 64 KB sample, then in full."""
-from __future__ import annotations
 
 import hashlib
 import os
