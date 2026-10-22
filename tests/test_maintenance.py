@@ -3,6 +3,8 @@ import plistlib
 import sqlite3
 import time
 
+import sys
+
 import pytest
 
 from pettagam import cli, service
@@ -177,3 +179,28 @@ def test_inbox_pass_skips_while_another_runs(placed, tmp_path):
         fcntl.flock(f, fcntl.LOCK_EX)
         assert sort_inbox(con, str(inbox), progress=quiet).get("busy") == 1
     assert sort_inbox(con, str(inbox), progress=quiet)["placed"] == 1
+
+
+def test_service_refresh_moves_the_job_to_this_python(tmp_path):  # PLAT-7
+    inbox, home = tmp_path / "inbox", tmp_path / "home"
+    inbox.mkdir()
+    fake = FakeRunner()
+    assert service.refresh(platform="linux", home=str(home), runner=fake) is None  # off: nothing to do
+    service.install(str(tmp_path / "p.db"), str(inbox), str(tmp_path / "lib"), every=600, platform="linux",
+                    home=str(home), runner=fake, python="/usr/bin/python3.9", notify=False)
+    unit = home / ".config" / "systemd" / "user" / "pettagam-inbox.service"
+    assert "/usr/bin/python3.9" in unit.read_text()
+    st = service.refresh(platform="linux", home=str(home), runner=fake)
+    assert st["python"] == sys.executable and st["every"] == 600 and st["notify"] is False
+    assert sys.executable in unit.read_text() and "python3.9" not in unit.read_text()
+
+
+def test_doctor_flags_a_background_job_on_an_old_python(tmp_path, monkeypatch):  # PLAT-7
+    from pettagam import doctor
+    monkeypatch.setattr(service, "status", lambda *a, **k: {"installed": True, "text": "On.",
+                                                             "python": str(tmp_path / "gone" / "python3.9")})
+    check = {c["name"]: c for c in doctor.run_checks(source=str(tmp_path), library=str(tmp_path))}["Automatic inbox"]
+    assert check["status"] == "fail" and "service refresh" in check["fix"]
+    monkeypatch.setattr(service, "status", lambda *a, **k: {"installed": True, "text": "On.", "python": sys.executable})
+    check = {c["name"]: c for c in doctor.run_checks(source=str(tmp_path), library=str(tmp_path))}["Automatic inbox"]
+    assert check["status"] == "ok"

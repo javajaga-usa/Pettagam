@@ -13,6 +13,7 @@ import shutil
 import sys
 import tempfile
 
+from . import MIN_PYTHON
 from .db import get_meta
 
 
@@ -107,6 +108,18 @@ def drive_format_check(fs) -> dict:
     return _check("ok", "Drive format", f"{fs}: hardlinks work.")
 
 
+def _python_ok(python) -> bool:
+    """Whether that interpreter exists and is new enough for Pettagam."""
+    if not python or not os.path.exists(python):
+        return False
+    import subprocess
+    try:
+        return subprocess.run([python, "-c", "import sys; raise SystemExit(sys.version_info < %r)" % (MIN_PYTHON,)],
+                              capture_output=True, timeout=20).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def run_checks(con=None, source: str = None, library: str = None, inbox: str = None,
                db_path: str = None) -> list:
     source = source or (get_meta(con, "source") if con else None)
@@ -114,8 +127,8 @@ def run_checks(con=None, source: str = None, library: str = None, inbox: str = N
     out = []
 
     v = sys.version_info
-    out.append(_check("ok" if v >= (3, 9) else "fail", "Python", f"Python {v.major}.{v.minor}.{v.micro}",
-                      "" if v >= (3, 9) else "Install Python 3.9 or newer."))
+    out.append(_check("ok" if v >= MIN_PYTHON else "fail", "Python", f"Python {v.major}.{v.minor}.{v.micro}",
+                      "" if v >= MIN_PYTHON else "Install Python %d.%d or newer." % MIN_PYTHON))
 
     if not source:
         out.append(_check("warn", "Old files", "Not chosen yet.", "Run a dry run, or choose the folder in the panel."))
@@ -183,8 +196,13 @@ def run_checks(con=None, source: str = None, library: str = None, inbox: str = N
     try:
         from .service import status as service_status
         st = service_status()
-        out.append(_check("ok", "Automatic inbox", st["text"]) if st["installed"] else
-                   _check("ok", "Automatic inbox", "Off. The inbox is sorted when you ask."))
+        if not st["installed"]:
+            out.append(_check("ok", "Automatic inbox", "Off. The inbox is sorted when you ask."))
+        elif st.get("python") != sys.executable and not _python_ok(st.get("python")):
+            out.append(_check("fail", "Automatic inbox", "On, but it runs a Python older than %d.%d (or one that is gone), "
+                              "so it fails." % MIN_PYTHON, "Run `pettagam service refresh` (or Setup again)."))
+        else:
+            out.append(_check("ok", "Automatic inbox", st["text"]))
     except Exception:  # never let the health check itself fail
         pass
 

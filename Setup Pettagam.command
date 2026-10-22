@@ -11,9 +11,9 @@
 #  isn't signed by a registered developer. An app *built on this Mac* carries
 #  no such mark, so this script builds the launcher here.
 #
-#  Nothing is installed system-wide. Pettagam needs only the Python that comes
-#  with macOS. AI tagging, if you choose it, goes in a .venv folder beside this
-#  file. To remove everything again, run "Uninstall Pettagam.command".
+#  Nothing is installed system-wide. Pettagam needs Python 3.13 or newer (the
+#  free installer from python.org, or Homebrew) and nothing else. It runs from a
+#  .venv folder beside this file, where AI tagging also goes if you choose it. To remove everything again, run "Uninstall Pettagam.command".
 # ---------------------------------------------------------------------------
 set -uo pipefail
 
@@ -57,27 +57,34 @@ else
 fi
 
 # --- 2. Python ----------------------------------------------------------------
-step "2" "Looking for Python 3.9 or newer"
-PYTHON=""
-for candidate in python3 python3.13 python3.12 python3.11 python3.10 python3.9; do
-    if command -v "$candidate" >/dev/null 2>&1 \
-       && "$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)' 2>/dev/null; then
-        PYTHON="$(command -v "$candidate")"
-        break
-    fi
-done
-if [ -z "$PYTHON" ]; then
-    warn "Python 3 is not installed."
-    note "It comes with Apple's command line tools: one download, straight from Apple."
-    if [ "$(dialog "Pettagam needs Python 3, which comes with Apple's command line tools.\n\nAsk macOS to install them now?" "Not now" "Install")" = "Install" ]; then
-        xcode-select --install 2>/dev/null || true
-        note "When that finishes, run Setup Pettagam again."
+step "2" "Looking for Python 3.13 or newer"
+. "$HERE/launchers/find-python.sh"
+VENV="$HERE/.venv"
+BASE="$(pettagam_python)" || BASE=""
+if ! pettagam_python_ok "$VENV/bin/python" && [ -z "$BASE" ]; then
+    warn "Python $PETTAGAM_MIN_PYTHON or newer is not installed."
+    note "The Python that comes with Apple's command line tools is too old (3.9)."
+    note "Get the free installer from python.org, the home of Python."
+    if [ "$(dialog "Pettagam needs Python $PETTAGAM_MIN_PYTHON or newer. The one in Apple's command line tools is too old.\n\nOpen the python.org download page? Install Python, then run Setup Pettagam again." "Not now" "Open python.org")" = "Open python.org" ]; then
+        open "https://www.python.org/downloads/macos/" 2>/dev/null || true
+        note "When the installer finishes, run Setup Pettagam again."
     else
         fail "Cancelled. Nothing was changed."
     fi
     finish
     exit 1
 fi
+# Pettagam runs from its own .venv beside this file, so the app, the command and the background job
+# all use this Python whatever else is installed later. It needs no internet.
+if ! pettagam_python_ok "$VENV/bin/python"; then
+    rm -rf "$VENV"
+    if ! "$BASE" -m venv "$VENV"; then
+        fail "Could not set up Python in $VENV."
+        finish
+        exit 1
+    fi
+fi
+PYTHON="$VENV/bin/python"
 ok "$("$PYTHON" --version 2>&1): $PYTHON"
 if ! "$PYTHON" -c 'import sys; sys.path.insert(0, "'"$HERE"'"); import pettagam' 2>/dev/null; then
     fail "The pettagam folder is missing next to this file. Download Pettagam again."
@@ -85,13 +92,17 @@ if ! "$PYTHON" -c 'import sys; sys.path.insert(0, "'"$HERE"'"); import pettagam'
     exit 1
 fi
 
+if [ -f "$HOME/.pettagam/service.json" ] \
+   && PYTHONPATH="$HERE" "$PYTHON" -m pettagam service refresh >/dev/null 2>&1; then
+    ok "Background inbox sorting now uses this Python too."
+fi
+
 # --- 3. Optional: AI tagging -----------------------------------------------------
 step "3" "AI tagging (optional)"
-if [ -x "$HERE/.venv/bin/python" ] && "$HERE/.venv/bin/python" -c 'import anthropic' 2>/dev/null; then
+if "$PYTHON" -c 'import anthropic' 2>/dev/null; then
     ok "Already set up."
 elif [ "$(dialog "Set up AI tagging too?\n\nIt lets Claude add tags like beach or receipt to your photos and documents. It needs an internet connection now and an Anthropic API key later. You can skip it and run setup again any time." "Set up" "Skip")" = "Set up" ]; then
-    if "$PYTHON" -m venv "$HERE/.venv" && "$HERE/.venv/bin/python" -m pip install --quiet --upgrade pip \
-       && "$HERE/.venv/bin/python" -m pip install --quiet "anthropic>=1,<3"; then
+    if "$PYTHON" -m pip install --quiet --upgrade pip && "$PYTHON" -m pip install --quiet "anthropic>=1,<3"; then
         ok "AI tagging is ready. Add your API key in Terminal: export ANTHROPIC_API_KEY=..."
     else
         warn "Could not install it (no internet?). Everything else works; try again later."

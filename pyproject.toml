@@ -7,8 +7,8 @@ name = "pettagam"
 dynamic = ["version"]  # from pettagam/__init__.py, so the two can't disagree
 description = "Organize a messy file tree into a smart, type-based library"
 readme = "README.md"
-# 3.9 is what the macOS Command Line Tools still ship; CI tests 3.9 through 3.13.
-requires-python = ">=3.9"
+# 3.13 or newer (the owner's choice, 2026-10-22). The core needs nothing outside the standard library.
+requires-python = ">=3.13"
 authors = [{ name = "Jagadeesh" }]
 keywords = ["files", "organize", "photos", "deduplicate", "hardlink", "library", "nas"]
 classifiers = [
@@ -20,11 +20,8 @@ classifiers = [
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: System :: Archiving",
     "Topic :: System :: Filesystems",
 ]

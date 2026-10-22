@@ -199,10 +199,20 @@ def install(db: str, inbox: str, library: str, every: int = 300, platform=None, 
         started = _run(runner, ["systemctl", "--user", "daemon-reload"]) and _run(
             runner, ["systemctl", "--user", "enable", "--now", f"{UNIT}.timer", f"{UNIT}.path", f"{FIXITY_UNIT}.timer"])
     state = {"inbox": os.path.abspath(inbox), "library": os.path.abspath(library), "db": os.path.abspath(db),
-             "every": every, "log": log, "started": started, "notify": notify}
+             "every": every, "log": log, "started": started, "notify": notify, "python": cmd[0]}
     with open(_state_file(home), "w", encoding="utf-8") as f:
         json.dump(state, f, indent=2)
     return state
+
+
+def refresh(platform=None, home=None, runner=None, python=None):
+    """Rewrite a background job that is on so it uses this Python (after an upgrade or a new .venv).
+    Returns the new state, or None when the job is off or its inbox is gone."""
+    st = status(platform, home)
+    if not st["installed"] or not st.get("inbox") or not os.path.isdir(st["inbox"]):
+        return None
+    return install(st["db"], st["inbox"], st["library"], every=st.get("every", 300), platform=platform, home=home,
+                   runner=runner, python=python, notify=st.get("notify", True))
 
 
 def uninstall(platform=None, home=None, runner=None) -> bool:

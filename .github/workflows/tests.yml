@@ -11,13 +11,13 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        # 3.9: the macOS Command Line Tools. 3.12: Ubuntu 24.04. 3.13: newest.
-        python: ["3.9", "3.12", "3.13"]
+        # 3.13: the minimum. 3.14: the newest release.
+        python: ["3.13", "3.14"]
         extras: ["dev"]
         include:
           # The optional extras too (xxhash hashing, the anthropic library), so they keep working.
           - os: ubuntu-latest
-            python: "3.12"
+            python: "3.13"
             extras: "dev,all"
     runs-on: ${{ matrix.os }}
     steps:
@@ -35,7 +35,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
       - run: python -m pip install build && python -m build
       - name: Install the wheel in a clean environment
         run: |

@@ -2,7 +2,7 @@
 # ---------------------------------------------------------------------------
 #  Pettagam: remove it from this Mac (or Linux computer).
 #
-#  Removes the Pettagam app, the background inbox sorting, and the AI-tagging
+#  Removes the Pettagam app, the background inbox sorting, and Pettagam's
 #  .venv. You choose whether to keep your settings and catalog (~/.pettagam).
 #
 #  Your files are never touched: not the old files, not the library, not the
@@ -40,7 +40,8 @@ if [ "$ASK" = 1 ] && [ "$(ask "Remove Pettagam from this computer?\n\nYour old f
     exit 0
 fi
 
-PYTHON="$(command -v python3 || true)"
+. "$HERE/launchers/find-python.sh"
+PYTHON="$(pettagam_python "$HERE")" || PYTHON=""
 if [ -n "$PYTHON" ] && PYTHONPATH="$HERE" "$PYTHON" -m pettagam service off >/dev/null 2>&1; then
     ok "Background inbox sorting stopped"
 fi
@@ -58,7 +59,7 @@ done
 [ -e "$HOME/.local/bin/pettagam" ] && grep -q "pettagam" "$HOME/.local/bin/pettagam" 2>/dev/null \
     && rm -f "$HOME/.local/bin/pettagam" && ok "Removed the pettagam command"
 [ -e "$HOME/.local/share/applications/pettagam.desktop" ] && rm -f "$HOME/.local/share/applications/pettagam.desktop"
-[ -d "$HERE/.venv" ] && rm -rf "$HERE/.venv" && ok "Removed the AI-tagging libraries"
+[ -d "$HERE/.venv" ] && rm -rf "$HERE/.venv" && ok "Removed Pettagam's Python environment (.venv)"
 
 if [ -d "$HOME/.pettagam" ]; then
     if [ "$REMOVE_SETTINGS" = 1 ] || [ "$(ask "Also remove your Pettagam settings and catalog (~/.pettagam)?\n\nKeep them if you might use Pettagam again. A copy of the catalog is also kept in the library's _meta folder." "Keep" "Remove")" = "Remove" ]; then

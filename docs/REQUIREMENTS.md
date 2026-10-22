@@ -54,7 +54,7 @@ The guiding principle, which overrides any other requirement it conflicts with: 
 | Computer | Mac (Apple silicon or Intel), a current macOS release | Ubuntu 24.04 LTS server or desktop |
 | Drive | Toshiba N300 Pro hard drive (7,200 rpm, CMR), USB or Thunderbolt enclosure, mounted under `/Volumes/` | Same drive or its successor, mounted under `/srv/ninaivu/` |
 | Drive format | APFS (hardlinks work) | ext4 (see PLAT-6: Ubuntu cannot write APFS) |
-| Python | 3.9 from the macOS Command Line Tools, or newer | 3.12 (Ubuntu 24.04) |
+| Python | 3.13 or newer, from python.org or Homebrew (the 3.9 in the Command Line Tools is too old) | 3.13 or newer (Ubuntu 24.04 ships 3.12, so 3.13 comes from the deadsnakes PPA or a newer Ubuntu) |
 | Collection size (assumed design point, to confirm) | Up to 2 million files and 8 TB | Same |
 | Catalog | `~/.pettagam/pettagam.db` on the internal SSD, with a copy in `<library>/_meta/catalog.db` | Same |
 
@@ -334,7 +334,7 @@ Threat model: Pettagam runs as the owner on their own computer. The panel is a w
 | --- | --- | --- |
 | MAINT-1 | The core shall use the Python standard library only; extra packages shall be optional extras (`fast`, `ai`). | `pyproject.toml`; CI runs the tests with and without the extras |
 | MAINT-2 | Every requirement shall be verified by an automated test where practical, and `tests/test_requirements.py` shall check that the tests this document names exist. | `test_requirements.py::test_every_named_test_exists` |
-| MAINT-3 | CI shall run the tests on macOS and Ubuntu with Python 3.9, 3.12 and 3.13 for every pull request, and build and install the package. | `.github/workflows/tests.yml` |
+| MAINT-3 | CI shall run the tests on macOS and Ubuntu with Python 3.13 (the minimum) and 3.14 for every pull request, and build and install the package. | `.github/workflows/tests.yml` |
 | MAINT-4 | The version shall be defined once (`pettagam/__init__.py`); releases are made by pushing a matching `v*` tag, with notes from `CHANGELOG.md`. | `.github/workflows/release.yml` |
 
 ## 7. Software and platform requirements
@@ -343,7 +343,7 @@ Threat model: Pettagam runs as the owner on their own computer. The panel is a w
 
 | Package | Needed for | Version | Where it is declared |
 | --- | --- | --- | --- |
-| Python | everything | 3.9 or newer (tested on 3.9, 3.12, 3.13) | `pyproject.toml` `requires-python` |
+| Python | everything | 3.13 or newer (tested on 3.13 and 3.14) | `pyproject.toml` `requires-python`, `pettagam.MIN_PYTHON`, `launchers/find-python.sh` |
 | SQLite | the catalog | the one built into Python | n/a |
 | `xxhash` | optional, faster hashing | `>=3,<5` | extra `fast` |
 | `anthropic` | optional, AI tagging | `>=1,<3` (uses `output_config` and the server-side fallback beta, present since 1.0; tested with 2.1) | extra `ai` |
@@ -362,6 +362,7 @@ Upper bounds stop a future major version of an optional library from breaking Pe
 | PLAT-3 | HEIC and RAW previews for AI tagging use macOS `sips`; on Ubuntu those files are skipped. |
 | PLAT-4 | Background sorting uses launchd on macOS and systemd user units on Ubuntu; on a headless Ubuntu server `loginctl enable-linger` is required. |
 | PLAT-5 | Paths shall be valid on Windows/Samba clients (no `\ / : * ? " < > |` or control characters in names), so the library can be shared from the Ubuntu server. |
+| PLAT-7 | Pettagam shall require Python 3.13 or newer and say so clearly on an older one. The setup scripts shall find a new enough Python (also where python.org and Homebrew install it, which a double-clicked app can't see on its PATH), and Pettagam shall run from its own `.venv` so the app, the command and the background job use that Python whatever else is installed. The minimum shall be stated the same way in every place. Verified by `test_requirements.py::test_python_minimum_is_the_same_everywhere`, `test_launchers.py::test_python_finder_needs_3_13_and_prefers_the_venv`. A background job set up with an older Python shall be moved to the new one by setup (`pettagam service refresh`), and the health check shall flag one that still uses an old Python: `test_maintenance.py::test_service_refresh_moves_the_job_to_this_python`, `test_maintenance.py::test_doctor_flags_a_background_job_on_an_old_python`. |
 | PLAT-6 | Ubuntu can't write to APFS. Moving the library to Ubuntu means copying it to an ext4 drive with hardlinks preserved (`rsync -aH`, or the library alone if the old files stay on the Mac) and then running `relocate`. The README describes this. |
 
 ## 8. Constraints, assumptions and out of scope
@@ -394,7 +395,13 @@ The audit compared the 0.3.0 code, tests and README against the requirements abo
 | G-15 | Packaging: version defined twice, no metadata (readme, classifiers, URLs), optional extras without upper bounds, no `all` extra, `build` missing from dev, CI not testing 3.13, the extras, or the built wheel. | Low | `pyproject.toml` and CI updated. | MAINT-1, MAINT-3, MAINT-4 |
 | G-16 | No written requirements and no traceability. Four requirements had no test (review folder, health check changing nothing, background priority, how much of a text file tagging sends). | Medium | This document, `tests/test_requirements.py`, and tests for those four. | MAINT-2 |
 
-### 9.2 Still open
+### 9.2 Resolved after the audit
+
+| Gap | Decision or fix | Requirement |
+| --- | --- | --- |
+| G-18 | Python 3.9 had reached its end of life. The owner chose 3.13 as the minimum (2026-10-22). `requires-python = ">=3.13"`, CI tests 3.13 and 3.14, the setup scripts find 3.13 or point to python.org (Mac) or the deadsnakes PPA (Ubuntu 24.04), and Pettagam runs from its own `.venv`. | PLAT-7, MAINT-3 |
+
+### 9.3 Still open
 
 | Gap | Finding | Recommendation | Owner decision needed? |
 | --- | --- | --- | --- |
@@ -402,7 +409,6 @@ The audit compared the 0.3.0 code, tests and README against the requirements abo
 | G-13 | Network mode is plain HTTP: the token crosses the home network unencrypted. | Use the panel over an SSH tunnel (`ssh -L 8484:localhost:8484 server`) instead of `--host 0.0.0.0`, or put it behind a TLS reverse proxy. | No, but note it before using network mode |
 | G-14 | The panel has not been checked for keyboard-only and screen-reader use. | Audit against WCAG 2.2 AA when the panel next changes. | No |
 | G-17 | No licence file. Without one, nobody else may legally use or change the code. | Choose a licence (MIT is the usual choice for a personal tool), or keep the repository private. | Yes |
-| G-18 | Python 3.9 reached its upstream end of life in October 2025 and gets no security fixes. It is kept because it is what the macOS Command Line Tools provide. | Raise `requires-python` to 3.10 once the Mac uses Python from python.org or Homebrew. | Yes, when convenient |
 | G-19 | The catalog has no schema version number; upgrades rely on adding missing columns. | Add `PRAGMA user_version` with the first change that needs more than new columns. | No |
 | G-20 | No linting or type checking in CI. | Add `ruff` (and optionally `mypy`) as a CI step. | No |
 

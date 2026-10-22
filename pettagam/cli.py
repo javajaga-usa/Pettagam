@@ -11,7 +11,7 @@
   pettagam views [--init]           rebuild the automatic views (by year, by camera, ...) as hardlinks
   pettagam tag                      add AI tags and descriptions to photos and documents (optional, paid)
   pettagam doctor                   check drives, hardlinks, free space and setup
-  pettagam service on|off|status    sort the inbox automatically in the background
+  pettagam service on|off|status|refresh  sort the inbox automatically in the background
   pettagam undo                     take placed files back out of the library (old files untouched)
   pettagam relocate                 follow the files after the drive is mounted somewhere else
   pettagam find WORDS [--tag T]     search the library by name, folder, tags, camera, type or year
@@ -130,7 +130,8 @@ def main(argv=None) -> int:
     dc.add_argument("--inbox")
 
     sv = sub.add_parser("service", help="sort the inbox automatically in the background (macOS, Linux)")
-    sv.add_argument("action", choices=["on", "off", "status"])
+    sv.add_argument("action", choices=["on", "off", "status", "refresh"],
+                    help="refresh: make a job that is on use this Python (setup does this)")
     sv.add_argument("--inbox", help="the inbox folder (needed for 'on')")
     sv.add_argument("--library", help="default: the library from the last dry run")
     sv.add_argument("--every", type=int, default=300, help="also check every N seconds (default 300)")
@@ -340,6 +341,10 @@ def _run(con, args) -> int:
             return 0
         if args.action == "off":
             print("Automatic inbox sorting stopped." if service.uninstall() else "It was not on.")
+            return 0
+        if args.action == "refresh":
+            st = service.refresh()
+            print(f"Automatic inbox sorting now uses {st['python']}." if st else "It is not on; nothing to refresh.")
             return 0
         if not args.inbox:
             raise SystemExit("Say which folder is the inbox: pettagam service on --inbox FOLDER")
