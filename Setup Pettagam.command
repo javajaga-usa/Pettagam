@@ -91,7 +91,7 @@ if [ -x "$HERE/.venv/bin/python" ] && "$HERE/.venv/bin/python" -c 'import anthro
     ok "Already set up."
 elif [ "$(dialog "Set up AI tagging too?\n\nIt lets Claude add tags like beach or receipt to your photos and documents. It needs an internet connection now and an Anthropic API key later. You can skip it and run setup again any time." "Set up" "Skip")" = "Set up" ]; then
     if "$PYTHON" -m venv "$HERE/.venv" && "$HERE/.venv/bin/python" -m pip install --quiet --upgrade pip \
-       && "$HERE/.venv/bin/python" -m pip install --quiet "anthropic>=1"; then
+       && "$HERE/.venv/bin/python" -m pip install --quiet "anthropic>=1,<3"; then
         ok "AI tagging is ready. Add your API key in Terminal: export ANTHROPIC_API_KEY=..."
     else
         warn "Could not install it (no internet?). Everything else works; try again later."
