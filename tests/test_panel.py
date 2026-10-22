@@ -139,6 +139,22 @@ def test_explore_inbox_and_files(server):
     assert wait_job(base)["job"]["result"]["Recent"] == 3
     assert call(base, "/api/estimate")["files"] == 3
 
+    # Tags typed in the file details are saved and searchable at once (FR-TAG-6).
+    it = call(base, "/api/explore?q=receipt")["items"][0]
+    d = call(base, "/api/tags", {"src": it["src"], "id": it["id"], "tags": ["Tax 2026", "shop"],
+                                 "description": "Hardware store"})
+    assert d == {"tags": "tax 2026,shop", "description": "Hardware store"}
+    assert call(base, "/api/explore?tag=tax 2026".replace(" ", "%20"))["total"] == 1
+    assert call(base, "/api/explore?q=hardware")["total"] == 1
+    for bad in ({"src": "sqlite_master", "id": 1, "tags": []}, {"src": "inbox", "id": "1", "tags": []},
+                {"src": "inbox", "id": it["id"], "tags": "a,b"}):
+        with pytest.raises(urllib.error.HTTPError) as e:
+            call(base, "/api/tags", bad)
+        assert e.value.code == 400
+    with pytest.raises(urllib.error.HTTPError) as e:
+        call(base, "/api/tags", {"src": "inbox", "id": 999, "tags": ["x"]})
+    assert e.value.code == 404
+
 
 def test_doctor_service_and_undo_from_panel(server, monkeypatch):
     from pettagam import service

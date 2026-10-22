@@ -213,6 +213,24 @@ def explore(s: dict, q: str = "", category: str = "", tag: str = "", year: str =
     return library.search(connect(s["db"]), q, category, tag, year, offset, limit)
 
 
+def edit_tags(s: dict, body: dict) -> tuple:
+    """Tags and description typed in Explore's file details. Returns (status, reply)."""
+    tags, desc = body.get("tags"), body.get("description")
+    if body.get("src") not in library.IN_LIBRARY or not isinstance(body.get("id"), int) \
+            or not (isinstance(tags, list) and all(isinstance(t, str) for t in tags)) \
+            or not (desc is None or isinstance(desc, str)):
+        return 400, {"error": "bad request"}
+    if not os.path.exists(s["db"]):
+        return 404, {"error": "not found"}
+    con = connect(s["db"])
+    library.edit_tags(con, [(body["src"], body["id"])], tags=tags, description=desc)
+    row = con.execute(f"SELECT tags, description FROM {body['src']} WHERE id=? AND "
+                      f"{library.IN_LIBRARY[body['src']]}", (body["id"],)).fetchone()
+    if not row:
+        return 404, {"error": "not found"}
+    return 200, {"tags": row[0] or "", "description": row[1] or ""}
+
+
 def facets(s: dict) -> dict:
     if not os.path.exists(s["db"]):
         return {"categories": [], "tags": [], "years": []}
@@ -512,6 +530,8 @@ class Handler(BaseHTTPRequestHandler):
             except SystemExit as e:
                 return self._send(400, {"error": str(e)})
             return self._send(200, service.status())
+        if u.path == "/api/tags":
+            return self._send(*edit_tags(s, body))
         if u.path == "/api/run":
             action = body.get("action")
             if action not in ("dryrun", "apply", "verify", "inbox", "views", "tag", "undo", "fixity", "bench"):

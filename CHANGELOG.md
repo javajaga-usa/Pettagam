@@ -4,6 +4,9 @@ All notable changes to Pettagam. Versions follow [semantic versioning](https://s
 
 ## [Unreleased]
 
+### Added
+- **Tags by hand, no AI needed**: type tags and a description in Explore's file details and press Save tags, or use `pettagam tags FILE --add grandma,goa --remove family` (`--set` replaces them all, `--description` the description). `pettagam tags --match "goa 2019" --add holiday` tags every file a search finds, after asking. Search sees the change at once; run Rebuild views to update the by-tag folders.
+
 ## [0.4.0] - 2026-10-22
 
 ### Breaking

@@ -25,6 +25,9 @@ SELECT 'inbox' AS src, id, dest, replace(dest, rtrim(dest, replace(dest, '/', ''
 ITEMS_SQL = PLACED_SQL + "\nUNION ALL" + INBOX_SQL
 NEWEST = "ORDER BY COALESCE(taken, mtime) DESC, dest"
 YEAR = "strftime('%Y', COALESCE(taken, mtime), 'unixepoch')"
+# Which rows of each table are library files.
+IN_LIBRARY = {"files": "action='place' AND status='done'", "inbox": "action='placed'"}
+MAX_TAGS = 20  # by hand; AI tagging gives at most 8
 
 
 def search(con, q: str = "", category: str = "", tag: str = "", year: str = "",
@@ -69,6 +72,44 @@ def search(con, q: str = "", category: str = "", tag: str = "", year: str = "",
         return (-when if when is not None else math.inf, r["dest"])
     newest = heapq.merge(*parts, key=newest_first)
     return {"items": list(itertools.islice(newest, offset, offset + limit)), "total": total}
+
+
+def find_item(con, path: str) -> tuple | None:
+    """The library file at PATH (a full path, or one inside the library) as (table, id), or None."""
+    library = get_meta(con, "library") or ""
+    rel = path
+    if os.path.isabs(path) and library:
+        rel = os.path.relpath(os.path.abspath(path), os.path.abspath(library))
+    rel = rel.replace(os.sep, "/")
+    for table, cond in IN_LIBRARY.items():
+        r = con.execute(f"SELECT id FROM {table} WHERE dest=? AND {cond}", (rel,)).fetchone()
+        if r:
+            return table, r[0]
+    return None
+
+
+def edit_tags(con, items, tags=None, add=(), remove=(), description: str | None = None) -> int:
+    """Change tags by hand on library files, given as (table, id): replace them all (TAGS), or ADD and REMOVE
+    some; DESCRIPTION replaces the description. Returns how many files changed. Search sees it at once."""
+    from .tag import clean_tags
+    drop = set(clean_tags(list(remove), MAX_TAGS))
+    changed = 0
+    for table, fid in items:
+        if table not in IN_LIBRARY:
+            raise ValueError(f"unknown table {table!r}")
+        row = con.execute(f"SELECT tags, description FROM {table} WHERE id=? AND {IN_LIBRARY[table]}",
+                          (fid,)).fetchone()
+        if not row:
+            continue
+        now = list(tags) if tags is not None else (row[0] or "").split(",")
+        new = clean_tags([t for t in clean_tags(now + list(add), 10 * MAX_TAGS) if t not in drop], MAX_TAGS)
+        desc = row[1] if description is None else " ".join(str(description).split())[:300]
+        after = (",".join(new) or None, desc or None)
+        if after != (row[0] or None, row[1] or None):
+            con.execute(f"UPDATE {table} SET tags=?, description=? WHERE id=?", (*after, fid))
+            changed += 1
+    con.commit()
+    return changed
 
 
 def tag_counts(con) -> list:

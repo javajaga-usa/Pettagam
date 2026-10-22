@@ -194,6 +194,18 @@ This builds `<library>/views/` with `by-year/<year>/<month>/` (photos and videos
 
 To change the views, write them to a file you can edit with `pettagam views --init` and edit `<library>/_meta/views.json`. Views use the same conditions as rules; a file appears in every view it matches, and `{tag}` makes one folder per tag.
 
+## Tags by hand
+
+You can tag files yourself, for free, with or without AI tagging. In **Explore library**, click a file, type tags separated by commas (and a description if you like) and press **Save tags**. Or from the command line:
+
+```
+pettagam tags /Volumes/N300/Pettagam/images/photos/2019/IMG_0001.jpg --add grandma,goa --remove family
+pettagam tags --match "goa 2019" --add holiday      # every file the search finds, after asking
+pettagam tags images/photos/2019/IMG_0001.jpg       # show its tags
+```
+
+`--set a,b` replaces all the tags and `--description "..."` the description. Tags are lowercase and a file can have up to 20. Search sees a change at once; run **Rebuild views** (`pettagam views`) to update the `by-tag/` folders. AI tagging leaves files you have tagged alone unless you use `--retag`.
+
 ## AI tagging
 
 Optional. Claude looks at each photo, PDF and text file in the library and gives it 3 to 8 tags (beach, birthday, receipt, passport…) and a one-line description, which you can then search in **Explore library** and use in rules and views.
