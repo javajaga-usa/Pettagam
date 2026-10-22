@@ -54,7 +54,7 @@ Open the Pettagam app (or run `pettagam panel`, or double-click `launchers/Petta
 4. **Place files**, then **Check everything is in sync.** **Undo placement…** takes it all back out again if you change your mind.
 5. **Keep it tidy:** choose an inbox folder and press **Sort the inbox now**, or tick **Sort the inbox automatically in the background**. **Rebuild views** and **Add AI tags…** are here too (tagging shows the number of files and a rough cost first).
 
-The **Explore library** tab shows every file in the library, newest first, with thumbnails. Search by any word in the name, folder, tags or description, filter by kind and year, or click a tag. Click a file to see a preview, where it came from, its date and tags, and to open it.
+The **Explore library** tab shows every file in the library, newest first, with thumbnails. Search by any word in the name, folder, tags or description, filter by kind and year, or click a tag. Click a file to see a preview, where it came from (and any identical copies in the old files), its date and tags, to edit its tags, and to open it. **On this day** shows what was taken on today's date in earlier years.
 
 The panel remembers your folders, shows live progress, and keeps its catalog in `~/.pettagam/` on your internal drive. To stop it, close the Terminal window that opened with it.
 

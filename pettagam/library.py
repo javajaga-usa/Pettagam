@@ -120,6 +120,17 @@ def edit_tags(con, items, tags=None, add=(), remove=(), description: str | None 
     return changed
 
 
+def copies_of(con, table: str, fid: int, limit: int = 50) -> dict:
+    """The identical copies of a placed file that stayed in the old files (only one went into the library),
+    as full paths, at most LIMIT of them, and how many there are."""
+    if table != "files":
+        return {"copies": [], "total": 0}
+    source = get_meta(con, "source") or ""
+    total = con.execute("SELECT COUNT(*) FROM files WHERE dup_of=?", (fid,)).fetchone()[0]
+    rows = con.execute("SELECT path FROM files WHERE dup_of=? ORDER BY path LIMIT ?", (fid, limit))
+    return {"copies": [os.path.join(source, r[0]) for r in rows], "total": total}
+
+
 def tag_counts(con) -> list:
     counts = {}
     for (tags,) in con.execute(f"SELECT tags FROM ({ITEMS_SQL}) WHERE tags IS NOT NULL AND tags != ''"):

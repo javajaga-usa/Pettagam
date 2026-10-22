@@ -612,6 +612,18 @@ function openDetail(r) {
   $("dt-tags").value = tagsOf(r).join(", "); $("dt-desc").value = r.description || ""; $("dt-saved").textContent = "";
   dtItem = r;
   if (!$("detail").open) $("detail").showModal();
+  if (r.src === "files") showCopies(r);
+}
+let copiesAsked = 0;
+async function showCopies(r) {
+  const asked = ++copiesAsked;  // the details may be redrawn before the answer comes
+  try {
+    const d = await api(`/api/copies?${new URLSearchParams({ src: r.src, id: r.id })}`);
+    if (!d.total || asked !== copiesAsked || !$("detail").open) return;
+    const more = d.total > d.copies.length ? `<br>and ${fmtN(d.total - d.copies.length)} more` : "";
+    $("dt-info").insertAdjacentHTML("beforeend", `<dt>Same file in old files</dt><dd>${d.copies.map(esc).join("<br>")}${more}` +
+      `<br><span class="hint">Only one copy went into the library. Nothing was deleted.</span></dd>`);
+  } catch (e) {}
 }
 $("dt-edit").onsubmit = async (e) => {
   e.preventDefault();

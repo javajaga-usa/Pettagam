@@ -213,3 +213,17 @@ def test_on_this_day(placed, capsys):  # FR-FIND-5
     with pytest.raises(SystemExit):
         cli.main(db + ["find", "--day", "25-12"])
     cli.main(db + ["find", "--on-this-day"])  # today: whatever it finds, it runs
+
+
+def test_copies_of_a_library_file(placed):  # FR-FIND-6
+    from pettagam.library import copies_of
+    con, src, lib, dbp = placed
+    keep = con.execute("SELECT id FROM files WHERE name='IMG_0001.JPG'").fetchone()[0]
+    got = copies_of(con, "files", keep)
+    assert got["total"] == 2 and got["copies"] == sorted(got["copies"])
+    assert {os.path.relpath(c, src) for c in got["copies"]} == {os.path.join("b", "IMG_0001 copy.JPG"),
+                                                                os.path.join("c", "IMG_0001 (2).JPG")}
+    assert all(os.path.exists(c) for c in got["copies"])
+    assert copies_of(con, "files", keep, limit=1) == {"copies": got["copies"][:1], "total": 2}
+    pdf = con.execute("SELECT id FROM files WHERE name='report.pdf'").fetchone()[0]
+    assert copies_of(con, "files", pdf)["total"] == 0 and copies_of(con, "inbox", keep)["total"] == 0

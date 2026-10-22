@@ -7,6 +7,7 @@ All notable changes to Pettagam. Versions follow [semantic versioning](https://s
 ### Added
 - **Tags by hand, no AI needed**: type tags and a description in Explore's file details and press Save tags, or use `pettagam tags FILE --add grandma,goa --remove family` (`--set` replaces them all, `--description` the description). `pettagam tags --match "goa 2019" --add holiday` tags every file a search finds, after asking. Search sees the change at once; run Rebuild views to update the by-tag folders.
 - **On this day**: a button in Explore library, and `pettagam find --on-this-day` (or `--day 12-25`), shows the files taken on today's date in every earlier year. Over a million files it answers in about 0.4 s.
+- A file's details in Explore list the identical copies of it that stayed in the old files, so you can see where else it was before deciding to tidy them up.
 
 ## [0.4.0] - 2026-10-22
 

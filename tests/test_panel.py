@@ -118,6 +118,8 @@ def test_explore_inbox_and_files(server):
     inv = d["items"][0]
     on_day = call(base, "/api/explore?day=" + time.strftime("%m-%d", time.gmtime(inv["taken"] or inv["mtime"])))
     assert inv["dest"] in [it["dest"] for it in on_day["items"]]  # FR-FIND-5
+    assert call(base, f"/api/copies?src=files&id={inv['id']}") == {"copies": [], "total": 0}  # FR-FIND-6
+    assert call(base, "/api/copies?src=files&id=x")["total"] == 0
     with pytest.raises(urllib.error.HTTPError) as e:
         call(base, "/api/explore?day=99-99")
     assert e.value.code == 400

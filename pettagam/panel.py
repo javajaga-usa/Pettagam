@@ -456,6 +456,10 @@ class Handler(BaseHTTPRequestHandler):
                                                day=q.get("day", "")))
             except ValueError as e:
                 return self._send(400, {"error": str(e)})
+        if u.path == "/api/copies":
+            if not (os.path.exists(s["db"]) and q.get("id", "").isdigit()):
+                return self._send(200, {"copies": [], "total": 0})
+            return self._send(200, library.copies_of(connect(s["db"]), q.get("src", ""), int(q["id"])))
         if u.path == "/api/rules":
             return self._send(200, rules_file(s))
         if u.path == "/api/stats":
