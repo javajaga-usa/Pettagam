@@ -96,6 +96,10 @@ def main(argv=None) -> int:
     pn.add_argument("--host", default="127.0.0.1",
                     help="127.0.0.1 = this computer only; 0.0.0.0 = reachable from your network")
     pn.add_argument("--no-browser", action="store_true", help="do not open a browser window")
+    pn.add_argument("--tls", action="store_true",
+                    help="serve over HTTPS with a certificate made for this computer (kept in ~/.pettagam/tls)")
+    pn.add_argument("--tls-cert", help="your own certificate (PEM) for HTTPS")
+    pn.add_argument("--tls-key", help="the private key for --tls-cert")
 
     r = sub.add_parser("rules", help="check your placement rules and count what each one matches")
     r.add_argument("--library", help="default: the library from the last dry run")
@@ -204,7 +208,8 @@ def main(argv=None) -> int:
         return 0
     if args.cmd == "panel":
         from .panel import serve
-        serve(args.host, args.port, open_browser=not args.no_browser)
+        serve(args.host, args.port, open_browser=not args.no_browser, tls=args.tls, cert=args.tls_cert,
+              key=args.tls_key)
         return 0
     con = connect(args.db)
     try:

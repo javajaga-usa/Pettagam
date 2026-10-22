@@ -5,11 +5,16 @@ computer as the host (which stops other websites reaching it through DNS rebindi
 every request needs the secret token from the start-up link.
 """
 
+import hashlib
 import json
 import mimetypes
 import os
 import secrets
+import shutil
+import socket
+import ssl
 import string
+import subprocess
 import threading
 import time
 import webbrowser
@@ -314,6 +319,7 @@ def browse(path: str) -> dict:
 class Handler(BaseHTTPRequestHandler):
     server_version = "Pettagam"
     token = None  # set when the panel is reachable from the network
+    secure = False  # served over HTTPS
 
     def _authorized(self, query: dict) -> bool:
         """On this computer, the request must be addressed to this computer by name. On the network,
@@ -337,7 +343,8 @@ class Handler(BaseHTTPRequestHandler):
             body.encode() if isinstance(body, str) else json.dumps(body).encode())
         self.send_response(code)
         if cookie and self.token:
-            self.send_header("Set-Cookie", f"pettagam={self.token}; HttpOnly; SameSite=Strict; Path=/")
+            self.send_header("Set-Cookie", f"pettagam={self.token}; HttpOnly; SameSite=Strict; Path=/"
+                             + ("; Secure" if self.secure else ""))
         self.send_header("Content-Type", f"{ctype}; charset=utf-8" if ctype.startswith(("text/", "application/json"))
                          else ctype)
         self.send_header("Content-Length", str(len(data)))
@@ -510,17 +517,103 @@ class Handler(BaseHTTPRequestHandler):
         self._send(404, {"error": "not found"})
 
 
-def serve(host: str = "127.0.0.1", port: int = 8484, open_browser: bool = True) -> None:
+# --- HTTPS for network mode ------------------------------------------------------
+
+def self_signed(directory: str = None) -> tuple:
+    """A certificate and key for this computer in ~/.pettagam/tls/, made once with openssl and kept,
+    so the browser's fingerprint stays the same between runs."""
+    directory = directory or os.path.join(HOME, "tls")
+    cert, key = os.path.join(directory, "panel.crt"), os.path.join(directory, "panel.key")
+    if os.path.exists(cert) and os.path.exists(key):
+        return cert, key
+    openssl = shutil.which("openssl")
+    if not openssl:
+        raise SystemExit("HTTPS needs the openssl command to make a certificate (sudo apt install openssl), "
+                         "or give your own with --tls-cert and --tls-key.")
+    private_dir(directory)
+    name = socket.gethostname() or "localhost"
+    names = sorted({"localhost", name, name.split(".")[0] + ".local"})
+    san = ",".join([f"DNS:{n}" for n in names] + ["IP:127.0.0.1"])
+    old = os.umask(0o077)  # the key is readable by you only
+    try:
+        r = subprocess.run([openssl, "req", "-x509", "-newkey", "rsa:2048", "-sha256", "-days", "825", "-nodes",
+                            "-keyout", key, "-out", cert, "-subj", f"/CN={name}", "-addext", f"subjectAltName={san}"],
+                           capture_output=True, text=True, timeout=60)
+    finally:
+        os.umask(old)
+    if r.returncode:
+        for p in (cert, key):
+            if os.path.exists(p):
+                os.remove(p)
+        raise SystemExit("Could not make a certificate: " + (r.stderr.strip() or "openssl failed"))
+    return cert, key
+
+
+def fingerprint(cert: str) -> str:
+    with open(cert, encoding="ascii") as f:
+        der = ssl.PEM_cert_to_DER_cert(f.read())
+    return ":".join(f"{b:02X}" for b in hashlib.sha256(der).digest())
+
+
+def tls_context(cert: str, key: str) -> ssl.SSLContext:
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    try:
+        ctx.load_cert_chain(cert, key)
+    except (OSError, ssl.SSLError) as e:
+        raise SystemExit(f"Could not use the certificate {cert}: {e}") from None
+    return ctx
+
+
+class TLSServer(ThreadingHTTPServer):
+    """HTTPS. The handshake happens in the request's own thread, so a slow or broken client can't hold up others."""
+    context = None
+
+    def finish_request(self, request, client_address):
+        request.settimeout(30)
+        try:
+            conn = self.context.wrap_socket(request, server_side=True)
+        except (ssl.SSLError, OSError):  # plain HTTP, a scanner, or a client that gave up
+            request.close()
+            return
+        try:
+            super().finish_request(conn, client_address)
+        finally:
+            conn.close()
+
+
+def make_server(host: str, port: int, cert: str = None, key: str = None):
+    if not cert:
+        return ThreadingHTTPServer((host, port), Handler)
+    httpd = TLSServer((host, port), Handler)
+    httpd.context = tls_context(cert, key)
+    return httpd
+
+
+def serve(host: str = "127.0.0.1", port: int = 8484, open_browser: bool = True, tls: bool = False,
+          cert: str = None, key: str = None) -> None:
     private_dir(HOME)
     local = host in ("127.0.0.1", "localhost", "::1")
     Handler.token = None if local else secrets.token_urlsafe(16)
-    httpd = ThreadingHTTPServer((host, port), Handler)
+    if (cert is None) != (key is None):
+        raise SystemExit("Give both --tls-cert and --tls-key.")
+    if tls and not cert:
+        cert, key = self_signed()
+    Handler.secure = bool(cert)
+    httpd = make_server(host, port, cert, key)
     name = "localhost" if local or host == "0.0.0.0" else host
-    url = f"http://{name}:{port}/" + ("" if local else f"?token={Handler.token}")
+    scheme = "https" if cert else "http"
+    url = f"{scheme}://{name}:{port}/" + ("" if local else f"?token={Handler.token}")
     print(f"Pettagam panel running at {url}  (press Ctrl+C to stop)")
     if not local:
         print("Reachable from your network. Open the link above (with its token) from another computer,"
               " replacing 'localhost' with this machine's name or address.")
+        if not cert:
+            print("The connection is not encrypted. On a network you don't fully trust, use --tls or an SSH tunnel.")
+    if cert:
+        print(f"HTTPS certificate: {cert}\n  SHA-256 fingerprint {fingerprint(cert)}\n"
+              "  A certificate made by Pettagam is not known to browsers: the first time, the browser warns."
+              " Check that it shows this fingerprint, then continue.")
     if open_browser:
         threading.Timer(0.5, lambda: webbrowser.open(url)).start()
     try:

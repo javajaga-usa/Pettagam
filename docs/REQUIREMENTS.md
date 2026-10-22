@@ -299,6 +299,7 @@ Threat model: Pettagam runs as the owner on their own computer. The panel is a w
 | SEC-7 | Library files served by the panel shall be confined to the library (no `..` or symlink escape) and, apart from PDFs, served in a CSP sandbox so a hostile HTML or SVG file can't act as the panel. | `panel.py` | `test_safety.py::test_panel_headers_and_sandboxed_library_files`, `test_panel.py::test_explore_inbox_and_files` |
 | SEC-8 | Rule templates shall not be able to write outside the library (FR-RULES-2). | `rules.py` | `test_milestone2.py::test_rules_validate_with_clear_messages` |
 | SEC-9 | Background jobs shall run as the user, never as root, with low CPU and I/O priority. | `service.py` | `test_requirements.py::test_background_jobs_run_at_low_priority_as_the_user` |
+| SEC-10 | In network mode the panel should be served over HTTPS (`--tls`): with the owner's certificate (`--tls-cert`, `--tls-key`), or one Pettagam makes once with `openssl` and keeps in `~/.pettagam/tls/` (key readable by the owner only), printing its SHA-256 fingerprint to check against the browser's warning. TLS 1.2 or newer; the token cookie is then `Secure`; plain HTTP to that port gets no answer; the handshake happens per connection so an idle client can't block others. Without TLS on the network, the panel shall say the connection is not encrypted. | `panel.py`, `cli.py` | `test_safety.py::test_panel_over_https_for_the_network`, `test_safety.py::test_panel_tls_needs_both_files` |
 
 ### 6.3 Privacy
 
@@ -408,13 +409,13 @@ The audit compared the 0.3.0 code, tests and README against the requirements abo
 | G-17 | No licence. Chose MIT, the usual licence for a personal tool: anyone may use and change the code if they keep the copyright notice, with no warranty. `LICENSE`, and `license = "MIT"` in `pyproject.toml` so the built package says so. If the repository should stay closed instead, delete `LICENSE` and the two `license` lines. | MAINT-5 |
 | G-20 | CI now runs `ruff check` (pinned version) and parses every shell script. The code was brought up to date for 3.13 on the way (`X \| None` instead of `Optional`, no `from __future__` imports, `zip(strict=True)` where lengths must match). Type checking with `mypy` is left out for now: the code has few annotations, so it would find little. | MAINT-6 |
 | G-19 | The catalog has a layout version (now 2) with numbered upgrade steps; an upgrade keeps a copy of the catalog as it was, and a newer catalog is refused. Version 2 adds an index that makes `duplicates` fast on large collections. | DS-9 |
+| G-13 | Network mode was plain HTTP. `pettagam panel --host 0.0.0.0 --tls` now serves HTTPS with a certificate made for this computer (or your own), and plain network mode warns that it isn't encrypted. The SSH tunnel stays the simplest choice for one person. | SEC-10 |
 
 ### 9.3 Still open
 
 | Gap | Finding | Recommendation | Owner decision needed? |
 | --- | --- | --- | --- |
 | G-12 | Performance targets (PERF-1, 2, 4) have not been measured on the N300 Pro yet. `pettagam bench` now measures all three; it found that Explore's opening view took 2.3 s over a million files (fixed with an index: 0.03 s). Word searches over a million files take 0.5-1.0 s, close to the target. | Run `pettagam bench "/Volumes/N300/Old files" --library /Volumes/N300/Pettagam` once, just after plugging in the drive, and paste the numbers here. If word searches are too slow on the Mac, the next step is an SQLite full-text index. | No |
-| G-13 | Network mode is plain HTTP: the token crosses the home network unencrypted. | Use the panel over an SSH tunnel (`ssh -L 8484:localhost:8484 server`) instead of `--host 0.0.0.0`, or put it behind a TLS reverse proxy. | No, but note it before using network mode |
 | G-14 | The panel has not been checked for keyboard-only and screen-reader use. | Audit against WCAG 2.2 AA when the panel next changes. | No |
 
 ## 10. Verification and change control

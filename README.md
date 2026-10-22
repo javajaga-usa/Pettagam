@@ -58,7 +58,13 @@ The **Explore library** tab shows every file in the library, newest first, with 
 
 The panel remembers your folders, shows live progress, and keeps its catalog in `~/.pettagam/` on your internal drive. To stop it, close the Terminal window that opened with it.
 
-**On Ubuntu Server (no screen):** the safest way is an SSH tunnel. Run the panel normally on the server (`launchers/pettagam-panel.sh --no-browser`), then on your laptop run `ssh -L 8484:localhost:8484 you@server` and open <http://localhost:8484/>. Everything travels encrypted inside SSH. Alternatively, `--host 0.0.0.0` makes the panel reachable from your network: the link it prints carries a secret token, so only people with the link can use it, but the connection is plain HTTP, so use this only on a home network you trust.
+**On Ubuntu Server (no screen):** the safest way is an SSH tunnel. Run the panel normally on the server (`launchers/pettagam-panel.sh --no-browser`), then on your laptop run `ssh -L 8484:localhost:8484 you@server` and open <http://localhost:8484/>. Everything travels encrypted inside SSH. Alternatively, `--host 0.0.0.0` makes the panel reachable from your network: the link it prints carries a secret token, so only people with the link can use it, and adding `--tls` encrypts it:
+
+```
+launchers/pettagam-panel.sh --host 0.0.0.0 --no-browser --tls
+```
+
+The first time, Pettagam makes a certificate for this computer (kept in `~/.pettagam/tls/`) and prints its SHA-256 fingerprint. Browsers don't know a home-made certificate, so they warn once: check that the fingerprint they show matches, then continue. If you have a certificate of your own (for example from your router or a reverse proxy), use `--tls-cert FILE --tls-key FILE` instead. Without `--tls` the connection is plain HTTP, and the panel says so.
 
 ## Use it from the command line
 
