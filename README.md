@@ -223,6 +223,14 @@ Export only reads the library. A file that is already there is skipped, and a di
 
 `find` prints full paths, so `pettagam find --tag invoice | head` works with other tools. `duplicates` only lists files. Nothing is deleted, and only one copy of each set went into the library. The Explore tab in the panel shows the same summary as `stats`.
 
+## Measuring speed
+
+```
+pettagam bench "/Volumes/N300/Old files" --library /Volumes/N300/Pettagam
+```
+
+Times how fast this computer and drive scan files, read them, make hardlinks and search a library of a million files, each against the target in [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) (OK or SLOW). The old files are only read; the hardlink test uses its own small files in the library's `_meta` folder and removes them. Without arguments it uses the folders from the last dry run. Run it just after plugging in the drive: later runs are faster because the computer remembers what it read. `--json` prints the numbers for keeping.
+
 ## Health check
 
 ```

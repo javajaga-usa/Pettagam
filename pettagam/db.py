@@ -42,6 +42,8 @@ CREATE TABLE IF NOT EXISTS files (
 CREATE INDEX IF NOT EXISTS files_size ON files(size);
 CREATE INDEX IF NOT EXISTS files_hash ON files(full_hash);
 CREATE INDEX IF NOT EXISTS files_dup ON files(dup_of);
+CREATE INDEX IF NOT EXISTS files_recent ON files(COALESCE(taken, mtime) DESC, dest)
+    WHERE action='place' AND status='done';
 CREATE TABLE IF NOT EXISTS inbox (
     id          INTEGER PRIMARY KEY,
     at          REAL NOT NULL,          -- when it was sorted
@@ -65,6 +67,7 @@ CREATE TABLE IF NOT EXISTS inbox (
     error       TEXT
 );
 CREATE INDEX IF NOT EXISTS inbox_size ON inbox(size);
+CREATE INDEX IF NOT EXISTS inbox_recent ON inbox(COALESCE(taken, mtime) DESC, dest) WHERE action='placed';
 """
 
 # The catalog's layout version, kept in SQLite's PRAGMA user_version. A catalog without one (0) is from
@@ -81,8 +84,12 @@ def _v1(con):
 
 
 def _v2(con):
-    """Duplicates looks up every copy of a file by dup_of; without an index that reads the whole table each time."""
+    """Indexes for big libraries. Duplicates looks up every copy of a file by dup_of, and Explore lists the
+    newest files first; without these both read the whole table."""
     con.execute("CREATE INDEX IF NOT EXISTS files_dup ON files(dup_of)")
+    con.execute("CREATE INDEX IF NOT EXISTS files_recent ON files(COALESCE(taken, mtime) DESC, dest) "
+                "WHERE action='place' AND status='done'")
+    # The inbox table itself may not exist yet in a very old catalog; SCHEMA adds it with its indexes.
 
 
 MIGRATIONS = {1: _v1, 2: _v2}

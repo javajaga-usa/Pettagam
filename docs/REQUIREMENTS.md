@@ -251,6 +251,7 @@ Each story lists the requirements that implement it (section 5 and 6). Acceptanc
 | FR-MOVE-1 | A copy of the catalog shall be kept at `<library>/_meta/catalog.db`, refreshed after placing, inbox passes, tagging and undo. | `maintenance.py` | `test_maintenance.py::test_catalog_copy_travels_and_relocate_restores_it` |
 | FR-MOVE-2 | `relocate` shall restore a catalog from that copy and point it at new source and library roots, then spot-check files. | `maintenance.py` | `test_maintenance.py::test_catalog_copy_travels_and_relocate_restores_it` |
 | FR-MOVE-3 | Paths inside the catalog shall be relative to the source and library roots. | `db.py` | `test_maintenance.py::test_catalog_copy_travels_and_relocate_restores_it` |
+| FR-BENCH-1 | `pettagam bench [SOURCE] [--library LIB]` shall time the scan (files per second), sequential reading (MB/s), hardlink placing (files per second) and Explore search over a made-up catalog of a million files, and show each against its target (PERF-1, 2, 4). It shall only read the old files, make its test files only in a temporary folder under `<library>/_meta/` and remove it, and record the numbers in the catalog (`bench_last`). | `bench.py`, `cli.py` | `test_bench.py::test_bench_reads_old_files_only_and_cleans_up`, `test_bench.py::test_bench_reports_a_drive_without_hardlinks`, `test_bench.py::test_bench_command_records_the_numbers` |
 
 ### 5.11 Panel and install
 
@@ -314,10 +315,11 @@ Threat model: Pettagam runs as the owner on their own computer. The panel is a w
 | --- | --- | --- |
 | REL-1 | Every long step (scan, apply, inbox, tag, fixity) shall be safe to interrupt and run again. | `test_pipeline.py::test_apply_link_and_verify`, `test_library.py::test_fixity_slices_and_missing` |
 | REL-2 | One unreadable file shall be recorded as an error and shall not stop the others. | `test_pipeline.py::test_existing_different_file_is_never_overwritten` |
-| PERF-1 | The scan should examine at least 1,000 files per second on the N300 Pro with 2 workers and the catalog on the SSD. | Not yet measured (gap G-12) |
-| PERF-2 | Hardlink placement should run at least 2,000 files per second on the same drive. | Not yet measured (gap G-12) |
+| PERF-1 | The scan should examine at least 1,000 files per second on the N300 Pro with 2 workers and the catalog on the SSD. | `pettagam bench` (FR-BENCH-1); N300 number still to record (gap G-12) |
+| PERF-2 | Hardlink placement should run at least 2,000 files per second on the same drive. | `pettagam bench`; N300 number still to record (gap G-12) |
 | PERF-3 | Duplicate detection shall read in full only files that share both size and a 64 KB sample with another file. | `test_library.py::test_stats_and_duplicates` |
-| PERF-4 | The panel's Explore tab should answer a search over 1 million files in under 1 second. | Not yet measured (gap G-12) |
+| PERF-4 | The panel's Explore tab should answer a search over 1 million files in under 1 second. | `pettagam bench`; `test_bench.py::test_search_over_many_files_is_quick` (100,000 files in CI). In the build container, 1 million files: opening view 0.02-0.04 s, word searches 0.5-1.0 s |
+| PERF-6 | Explore's opening view (newest first) shall come from an index, not by sorting the whole library, and placed and inbox files shall be merged in date order with pages that join up. | `test_bench.py::test_newest_first_uses_the_index`, `test_bench.py::test_search_merges_placed_and_inbox_files_newest_first` |
 | PERF-5 | The background jobs shall run at low priority (`Nice=10`, idle I/O) so they don't slow the computer. | `test_requirements.py::test_background_jobs_run_at_low_priority_as_the_user` |
 
 ### 6.5 Usability
@@ -411,7 +413,7 @@ The audit compared the 0.3.0 code, tests and README against the requirements abo
 
 | Gap | Finding | Recommendation | Owner decision needed? |
 | --- | --- | --- | --- |
-| G-12 | Performance targets (PERF-1, 2, 4) have never been measured on the N300 Pro. | Time a dry run and placement of a real subset on the Mac and record the numbers here. | No |
+| G-12 | Performance targets (PERF-1, 2, 4) have not been measured on the N300 Pro yet. `pettagam bench` now measures all three; it found that Explore's opening view took 2.3 s over a million files (fixed with an index: 0.03 s). Word searches over a million files take 0.5-1.0 s, close to the target. | Run `pettagam bench "/Volumes/N300/Old files" --library /Volumes/N300/Pettagam` once, just after plugging in the drive, and paste the numbers here. If word searches are too slow on the Mac, the next step is an SQLite full-text index. | No |
 | G-13 | Network mode is plain HTTP: the token crosses the home network unencrypted. | Use the panel over an SSH tunnel (`ssh -L 8484:localhost:8484 server`) instead of `--host 0.0.0.0`, or put it behind a TLS reverse proxy. | No, but note it before using network mode |
 | G-14 | The panel has not been checked for keyboard-only and screen-reader use. | Audit against WCAG 2.2 AA when the panel next changes. | No |
 

@@ -4,20 +4,25 @@ The panel's Explore tab and the `find`, `stats` and `duplicates` commands share 
 """
 
 import csv
+import heapq
+import itertools
 import os
 import time
 
 from .db import get_meta
 from .safeio import durable_copy
 
-# Every file in the library: placed from the old files, or sorted from the inbox.
-ITEMS_SQL = """
+# Every file in the library: placed from the old files, or sorted from the inbox. The WHERE clauses match
+# the partial indexes files_recent and inbox_recent (db.py), which list the newest first without sorting.
+PLACED_SQL = """
 SELECT 'files' AS src, id, dest, name, size, mtime, taken, camera, width, height, category, subtype, rule,
-       tags, description, path AS original FROM files WHERE action='place' AND status='done'
-UNION ALL
-SELECT 'inbox', id, dest, replace(dest, rtrim(dest, replace(dest, '/', '')), ''), size, mtime, taken, camera,
-       width, height, category, subtype, rule, tags, description, original FROM inbox WHERE action='placed'
-"""
+       tags, description, path AS original FROM files WHERE action='place' AND status='done'"""
+INBOX_SQL = """
+SELECT 'inbox' AS src, id, dest, replace(dest, rtrim(dest, replace(dest, '/', '')), '') AS name, size, mtime,
+       taken, camera, width, height, category, subtype, rule, tags, description, original
+       FROM inbox WHERE action='placed'"""
+ITEMS_SQL = PLACED_SQL + "\nUNION ALL" + INBOX_SQL
+NEWEST = "ORDER BY COALESCE(taken, mtime) DESC, dest"
 YEAR = "strftime('%Y', COALESCE(taken, mtime), 'unixepoch')"
 
 
@@ -38,10 +43,20 @@ def search(con, q: str = "", category: str = "", tag: str = "", year: str = "",
         where.append(f"{YEAR} = ?")
         args.append(str(year))
     w = " AND ".join(where)
-    total = con.execute(f"SELECT COUNT(*) FROM ({ITEMS_SQL}) WHERE {w}", args).fetchone()[0]
-    rows = con.execute(f"SELECT * FROM ({ITEMS_SQL}) WHERE {w} ORDER BY COALESCE(taken, mtime) DESC, dest "
-                       f"LIMIT ? OFFSET ?", (*args, limit, offset)).fetchall()
-    return {"items": [dict(r) for r in rows], "total": total}
+    # Each table on its own, so its index gives the newest files without sorting the whole library;
+    # then the two short lists are merged.
+    total, parts = 0, []
+    for part, table in ((PLACED_SQL, "files"), (INBOX_SQL, "inbox")):
+        sql = f"{part} AND {w}"
+        n = con.execute(f"SELECT COUNT(*) FROM ({sql})", args).fetchone()[0]
+        total += n
+        if not n:
+            continue
+        if n < 3 * (offset + limit):  # few matches: reading the table and sorting them beats walking the index
+            sql = sql.replace(f"FROM {table} WHERE", f"FROM {table} NOT INDEXED WHERE")
+        parts.append([dict(r) for r in con.execute(f"{sql} {NEWEST} LIMIT ?", (*args, offset + limit))])
+    newest = heapq.merge(*parts, key=lambda r: (-(r["taken"] if r["taken"] is not None else r["mtime"]), r["dest"]))
+    return {"items": list(itertools.islice(newest, offset, offset + limit)), "total": total}
 
 
 def tag_counts(con) -> list:

@@ -11,6 +11,7 @@
   pettagam views [--init]           rebuild the automatic views (by year, by camera, ...) as hardlinks
   pettagam tag                      add AI tags and descriptions to photos and documents (optional, paid)
   pettagam doctor                   check drives, hardlinks, free space and setup
+  pettagam bench [SOURCE]           measure scan, read, placing and search speed on this drive
   pettagam service on|off|status|refresh  sort the inbox automatically in the background
   pettagam undo                     take placed files back out of the library (old files untouched)
   pettagam relocate                 follow the files after the drive is mounted somewhere else
@@ -33,7 +34,7 @@ import time
 
 from . import __version__
 from .apply import apply
-from .db import connect, get_meta
+from .db import connect, get_meta, set_meta
 from .hashing import find_duplicates
 from .plan import SPLIT_AT, explain, plan, rule_counts
 from .report import report
@@ -127,6 +128,15 @@ def main(argv=None) -> int:
     dc.add_argument("--source")
     dc.add_argument("--library")
     dc.add_argument("--inbox")
+
+    bn = sub.add_parser("bench", help="measure how fast scanning, placing and searching are here")
+    bn.add_argument("source", nargs="?", help="the old files (only read); default: from the last dry run")
+    bn.add_argument("--library", help="where to time placing; default: from the last dry run")
+    bn.add_argument("--files", type=int, default=5000, help="how many files to time (default 5000)")
+    bn.add_argument("--workers", type=int, default=2, help="parallel reads, as for scan (default 2)")
+    bn.add_argument("--search-rows", type=int, default=1_000_000,
+                    help="size of the made-up catalog for the search timing; 0 skips it")
+    bn.add_argument("--json", action="store_true", help="print the numbers as JSON")
 
     sv = sub.add_parser("service", help="sort the inbox automatically in the background (macOS, Linux)")
     sv.add_argument("action", choices=["on", "off", "status", "refresh"],
@@ -330,6 +340,26 @@ def _run(con, args) -> int:
         except Exception:
             pass
         return print_checks(run_checks(con, args.source, args.library, args.inbox or svc, args.db))
+    if args.cmd == "bench":
+        from . import bench
+        source = args.source or get_meta(con, "source")
+        library = args.library or get_meta(con, "library")
+        if not source and not library:
+            print("No old files or library known yet: timing search only. Name a folder to time the drive.",
+                  file=sys.stderr)
+        say = (lambda *a: None) if args.json else print
+        res = bench.run(source, library, files=args.files, workers=args.workers, search_rows=args.search_rows,
+                        progress=say)
+        set_meta(con, "bench_last", json.dumps({"at": time.time(), **res}))
+        if args.json:
+            print(json.dumps(res, indent=2))
+            return 0
+        print()
+        for name, got, target, ok in bench.verdicts(res):
+            mark = "  " if ok is None else "OK" if ok else "SLOW"
+            print(f"  {mark:4} {name:7} {got:40} target {target}")
+        print("\nThe first run after plugging in the drive is the honest one; later runs are helped by the cache.")
+        return 0
     if args.cmd == "service":
         from . import service
         if args.action == "status":

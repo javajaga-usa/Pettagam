@@ -278,7 +278,7 @@ def test_old_catalog_gets_new_columns(tmp_path):
     old_schema = old_schema.replace("error       TEXT,\n);", "error       TEXT\n);")
     import sqlite3
     c = sqlite3.connect(str(p))
-    c.executescript(old_schema.split("CREATE TABLE IF NOT EXISTS inbox")[0])
+    c.executescript(old_schema.split("CREATE INDEX IF NOT EXISTS files_recent")[0])  # tables of the time
     c.close()
     cols = {r[1] for r in connect(str(p)).execute("PRAGMA table_info(files)")}
     assert {"taken", "rule", "tags", "description"} <= cols
