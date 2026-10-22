@@ -190,3 +190,63 @@ def test_rules_editor(server):
     assert call(base, "/api/rules")["exists"]
     assert not call(base, "/api/rules", {"text": '{"rules": [{"then": "../x"}]}', "save": True})["ok"]
     assert "Tax" in (lib / "_meta" / "rules.json").read_text()  # a bad save leaves the good file alone
+
+
+# --- accessibility (USE-6) ----------------------------------------------------------
+
+def _page():
+    from importlib import resources
+    return resources.files("pettagam").joinpath("panel.html").read_text(encoding="utf-8")
+
+
+def test_panel_controls_have_names_and_work_from_the_keyboard():  # USE-6
+    import re
+    from html.parser import HTMLParser
+    page = _page()
+
+    class Fields(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.depth, self.unnamed = 0, []
+
+        def handle_starttag(self, tag, attrs):
+            a = dict(attrs)
+            if tag == "label":
+                self.depth += 1
+            if tag in ("input", "select", "textarea") and not self.depth and "aria-label" not in a:
+                self.unnamed.append(a.get("id"))
+
+        def handle_endtag(self, tag):
+            if tag == "label":
+                self.depth -= 1
+    f = Fields()
+    f.feed(page)
+    assert not f.unnamed, f"form fields without a name for screen readers: {f.unnamed}"
+    # Everything clickable is a real button (or link), so Tab, Enter and Space reach it.
+    assert not re.search(r"<(div|span)[^>]*data-(path|item|tag)=", page)
+    assert not re.search(r"<a [^>]*>\s*<button", page)  # no button inside a link
+    assert ":focus-visible" in page and 'class="skip"' in page
+    assert page.count('role="tabpanel"') == 2 and "ArrowRight" in page
+    assert 'aria-live="polite"' in page and 'role="status"' in page
+
+
+def test_panel_text_colours_are_readable():  # USE-6: WCAG 2.2 AA, 4.5:1 for normal text
+    import re
+    page = _page()
+
+    def lum(h):
+        c = [int(h[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+        c = [x / 12.92 if x <= 0.03928 else ((x + 0.055) / 1.055) ** 2.4 for x in c]
+        return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+
+    def ratio(a, b):
+        hi, lo = sorted((lum(a), lum(b)), reverse=True)
+        return (hi + 0.05) / (lo + 0.05)
+    blocks = re.findall(r"(?:^:root|:root:not\(\[data-theme=\"light\"\]\)) \{([^}]*)\}", page, re.M)
+    assert len(blocks) == 2  # light and dark
+    for block in blocks:
+        v = dict(re.findall(r"--([\w-]+): (#[0-9a-fA-F]{6})", block))
+        for fg in ("ink", "muted", "accent", "ok", "warn", "bad"):
+            for bg in ("bg", "card", "chip", "code", "bar"):
+                assert ratio(v[fg], v[bg]) >= 4.5, (fg, bg, round(ratio(v[fg], v[bg]), 2))
+        assert ratio(v["accent-ink"], v["accent"]) >= 4.5

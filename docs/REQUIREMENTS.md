@@ -331,6 +331,7 @@ Threat model: Pettagam runs as the owner on their own computer. The panel is a w
 | USE-2 | Everything the owner needs day to day shall be possible from the panel, without a Terminal. | `test_panel.py::test_full_flow_through_panel` |
 | USE-3 | Installing and removing shall each be one double-click on the Mac. | `test_launchers.py::test_setup_builds_the_app_and_uninstall_removes_it_but_never_files` |
 | USE-4 | The panel should work on a phone-sized screen and be usable by keyboard. | Manual; keyboard and screen-reader use not yet audited (gap G-14) |
+| USE-6 | The panel should meet WCAG 2.2 AA for keyboard and screen-reader use: every control is a real button, link or labelled field (reachable with Tab, used with Enter or Space), focus is always visible, the tabs follow the ARIA tab pattern (arrow keys), status and results are announced (`aria-live`), dialogs are named, a skip link leads past the header, and text colours have at least 4.5:1 contrast in light and dark mode. | `test_panel.py::test_panel_controls_have_names_and_work_from_the_keyboard`, `test_panel.py::test_panel_text_colours_are_readable`; checked by hand in Chromium with the keyboard only |
 
 ### 6.6 Maintainability
 
@@ -410,13 +411,13 @@ The audit compared the 0.3.0 code, tests and README against the requirements abo
 | G-20 | CI now runs `ruff check` (pinned version) and parses every shell script. The code was brought up to date for 3.13 on the way (`X \| None` instead of `Optional`, no `from __future__` imports, `zip(strict=True)` where lengths must match). Type checking with `mypy` is left out for now: the code has few annotations, so it would find little. | MAINT-6 |
 | G-19 | The catalog has a layout version (now 2) with numbered upgrade steps; an upgrade keeps a copy of the catalog as it was, and a newer catalog is refused. Version 2 adds an index that makes `duplicates` fast on large collections. | DS-9 |
 | G-13 | Network mode was plain HTTP. `pettagam panel --host 0.0.0.0 --tls` now serves HTTPS with a certificate made for this computer (or your own), and plain network mode warns that it isn't encrypted. The SSH tunnel stays the simplest choice for one person. | SEC-10 |
+| G-14 | The panel was checked for keyboard-only and screen-reader use and fixed: folder lists, library tiles and tags were clickable boxes a keyboard couldn't reach (now buttons), search fields and menus had no names, there was no visible focus or skip link, results weren't announced, the Open button was a button inside a link, and four light-mode colours were below 4.5:1 contrast. | USE-6 |
 
 ### 9.3 Still open
 
 | Gap | Finding | Recommendation | Owner decision needed? |
 | --- | --- | --- | --- |
 | G-12 | Performance targets (PERF-1, 2, 4) have not been measured on the N300 Pro yet. `pettagam bench` now measures all three; it found that Explore's opening view took 2.3 s over a million files (fixed with an index: 0.03 s). Word searches over a million files take 0.5-1.0 s, close to the target. | Run `pettagam bench "/Volumes/N300/Old files" --library /Volumes/N300/Pettagam` once, just after plugging in the drive, and paste the numbers here. If word searches are too slow on the Mac, the next step is an SQLite full-text index. | No |
-| G-14 | The panel has not been checked for keyboard-only and screen-reader use. | Audit against WCAG 2.2 AA when the panel next changes. | No |
 
 ## 10. Verification and change control
 

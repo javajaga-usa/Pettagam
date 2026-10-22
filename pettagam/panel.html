@@ -7,8 +7,8 @@
 <link rel="icon" href="data:,">
 <style>
 :root {
-  --bg: #f6f5f2; --card: #ffffff; --ink: #1d1d1f; --muted: #6b6b70; --line: #e4e2dc;
-  --accent: #b5562b; --accent-ink: #ffffff; --ok: #2f7d4f; --warn: #a86b00; --bad: #b3261e;
+  --bg: #f6f5f2; --card: #ffffff; --ink: #1d1d1f; --muted: #5c5c61; --line: #e4e2dc;
+  --accent: #9c4520; --accent-ink: #ffffff; --ok: #24663f; --warn: #7f5200; --bad: #b3261e;
   --chip: #efece6; --bar: #e9e5dd; --code: #f1efea;
 }
 @media (prefers-color-scheme: dark) {
@@ -40,6 +40,13 @@ button { font: inherit; border-radius: 8px; border: 1px solid var(--line); backg
   padding: 8px 14px; cursor: pointer; }
 button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
 button:disabled { opacity: .45; cursor: not-allowed; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.skip { position: absolute; left: 8px; top: -60px; background: var(--card); padding: 8px 12px; border-radius: 8px; z-index: 10; }
+.skip:focus { top: 8px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+a.button { display: inline-block; text-decoration: none; font: inherit; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--card); color: var(--ink); padding: 8px 14px; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
 .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 14px 0; }
 .stat { background: var(--chip); border-radius: 10px; padding: 10px 12px; }
@@ -73,8 +80,10 @@ dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--c
 dialog::backdrop { background: rgba(0,0,0,.35); }
 .dlg-head { padding: 14px 16px; border-bottom: 1px solid var(--line); }
 .dlg-list { max-height: 50vh; overflow: auto; }
-.dlg-list div { padding: 8px 16px; cursor: pointer; border-bottom: 1px solid var(--line); }
-.dlg-list div:hover { background: var(--chip); }
+.dlg-list > * { display: block; width: 100%; text-align: left; padding: 8px 16px; border: 0; border-radius: 0;
+  border-bottom: 1px solid var(--line); background: none; }
+.dlg-list button { cursor: pointer; }
+.dlg-list button:hover { background: var(--chip); }
 .checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 14px; }
 .checks li > * { min-width: 0; overflow-wrap: anywhere; }
 .checks li { display: grid; grid-template-columns: 22px 130px minmax(0, 1fr); gap: 8px; align-items: baseline; }
@@ -89,14 +98,16 @@ nav.tabs button[aria-selected="true"] { background: var(--ink); color: var(--bg)
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
 .tile { background: var(--chip); border-radius: 10px; overflow: hidden; cursor: pointer; border: 1px solid var(--line);
   display: flex; flex-direction: column; min-width: 0; }
-.tile:hover { border-color: var(--accent); }
+.tile:hover, .tile:focus-within { border-color: var(--accent); }
+.tile .open { all: unset; cursor: pointer; display: block; }
+.tile .open:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
 .thumb { aspect-ratio: 4 / 3; background: var(--bar); display: grid; place-items: center; overflow: hidden; }
 .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .thumb .ext { font: 600 18px ui-monospace, Menlo, monospace; color: var(--muted); text-transform: uppercase; }
 .tile .meta { padding: 8px 10px; font-size: 12.5px; }
 .tile .meta b { display: block; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
-.chip { font-size: 11.5px; padding: 1px 7px; border-radius: 10px; background: var(--card); color: var(--muted); cursor: pointer;
+.chip { font: inherit; font-size: 11.5px; padding: 1px 7px; border-radius: 10px; background: var(--card); color: var(--muted); cursor: pointer;
   border: 1px solid var(--line); }
 .chip:hover { color: var(--accent); }
 .tagcloud { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 12px; }
@@ -113,20 +124,21 @@ dl.info dt { color: var(--muted); } dl.info dd { margin: 0; word-break: break-al
 </style>
 </head>
 <body>
+<a class="skip" href="#tab-organize">Skip to the panel</a>
 <header>
   <h1>Pettagam</h1><span class="ta">பெட்டகம்</span>
-  <span class="status" id="status">Loading…</span>
+  <span class="status" id="status" role="status">Loading…</span>
 </header>
-<nav class="tabs" role="tablist">
-  <button role="tab" data-tab="organize" aria-selected="true">Organize</button>
-  <button role="tab" data-tab="explore" aria-selected="false">Explore library</button>
+<nav class="tabs" role="tablist" aria-label="Pettagam">
+  <button role="tab" id="tabbtn-organize" data-tab="organize" aria-selected="true" aria-controls="tab-organize">Organize</button>
+  <button role="tab" id="tabbtn-explore" data-tab="explore" aria-selected="false" aria-controls="tab-explore" tabindex="-1">Explore library</button>
 </nav>
-<main id="tab-organize">
+<main id="tab-organize" role="tabpanel" aria-labelledby="tabbtn-organize" tabindex="-1">
   <section class="card">
     <h2><span class="num">1</span>Choose folders</h2>
     <p class="hint">Your old files are only ever read. Put the library on the same drive as the old files so placement is instant and uses no extra space.</p>
-    <div class="row"><b>Old files</b><div class="path" id="source"></div><button data-pick="source">Choose…</button></div>
-    <div class="row"><b>New library</b><div class="path" id="library"></div><button data-pick="library">Choose…</button></div>
+    <div class="row"><b>Old files</b><div class="path" id="source"></div><button data-pick="source" aria-label="Choose the old files folder">Choose…</button></div>
+    <div class="row"><b>New library</b><div class="path" id="library"></div><button data-pick="library" aria-label="Choose the library folder">Choose…</button></div>
   </section>
 
   <section class="card">
@@ -152,8 +164,8 @@ dl.info dt { color: var(--muted); } dl.info dd { margin: 0; word-break: break-al
     <h2>Look up any file</h2>
     <p class="hint">Search by old path or new location, or pick a folder.</p>
     <div class="tools">
-      <input id="q" placeholder="Search, for example invoice or IMG_2041">
-      <select id="folder"><option value="">All folders</option></select>
+      <input id="q" type="search" aria-label="Look up a file" placeholder="Search, for example invoice or IMG_2041">
+      <select id="folder" aria-label="Folder"><option value="">All folders</option></select>
     </div>
     <div class="scroll"><table id="plan"></table></div>
   </section>
@@ -171,7 +183,7 @@ dl.info dt { color: var(--muted); } dl.info dd { margin: 0; word-break: break-al
   <section class="card">
     <h2><span class="num">4</span>Keep it tidy</h2>
     <p class="hint">Drop new files into an inbox folder and Pettagam files them into the library by your rules and the smart types. Exact copies of files already in the library go to <code>_duplicates</code> in the inbox; nothing is deleted.</p>
-    <div class="row"><b>Inbox</b><div class="path" id="inbox"></div><button data-pick="inbox">Choose…</button></div>
+    <div class="row"><b>Inbox</b><div class="path" id="inbox"></div><button data-pick="inbox" aria-label="Choose the inbox folder">Choose…</button></div>
     <div class="actions">
       <button class="primary" id="btn-inbox">Sort the inbox now</button>
       <button id="btn-views">Rebuild views</button>
@@ -199,35 +211,36 @@ dl.info dt { color: var(--muted); } dl.info dd { margin: 0; word-break: break-al
 
   <section class="card" id="activity">
     <h2>Activity</h2>
-    <div class="msg" id="result"></div>
+    <div class="msg" id="result" role="status" aria-live="polite"></div>
     <div class="log" id="log" hidden></div>
   </section>
 </main>
 
-<main id="tab-explore" hidden>
+<main id="tab-explore" role="tabpanel" aria-labelledby="tabbtn-explore" tabindex="-1" hidden>
   <section class="card">
     <p class="hint" id="ex-stats" style="margin-top:0"></p>
     <div class="tools">
-      <input id="ex-q" placeholder="Search names, folders, tags and descriptions, for example beach 2019">
-      <select id="ex-cat"><option value="">All kinds</option></select>
-      <select id="ex-year"><option value="">Any year</option></select>
+      <input id="ex-q" type="search" aria-label="Search the library" placeholder="Search names, folders, tags and descriptions, for example beach 2019">
+      <select id="ex-cat" aria-label="Kind of file"><option value="">All kinds</option></select>
+      <select id="ex-year" aria-label="Year"><option value="">Any year</option></select>
     </div>
-    <div class="tagcloud" id="ex-tags"></div>
-    <p class="hint" id="ex-count"></p>
+    <div class="tagcloud" id="ex-tags" role="group" aria-label="Tags"></div>
+    <p class="hint" id="ex-count" role="status" aria-live="polite"></p>
     <div class="grid" id="ex-grid"></div>
     <div class="actions" style="margin-top:14px"><button id="ex-more" hidden>Show more</button></div>
   </section>
 </main>
 
-<dialog id="detail">
+<dialog id="detail" aria-labelledby="dt-title">
+  <h2 class="sr-only" id="dt-title">File details</h2>
   <div class="preview" id="dt-preview"></div>
   <dl class="info" id="dt-info"></dl>
-  <div class="dlg-foot"><a id="dt-open" target="_blank" rel="noopener"><button>Open</button></a><button id="dt-close" class="primary">Close</button></div>
+  <div class="dlg-foot"><a id="dt-open" class="button" target="_blank" rel="noopener">Open</a><button id="dt-close" class="primary">Close</button></div>
 </dialog>
 
-<dialog id="picker">
+<dialog id="picker" aria-labelledby="pick-title">
   <div class="dlg-head"><b id="pick-title">Choose a folder</b><div class="path" id="pick-path" style="margin-top:8px"></div></div>
-  <div class="dlg-list" id="pick-list"></div>
+  <div class="dlg-list" id="pick-list" role="list" aria-label="Folders"></div>
   <div class="dlg-head" id="pick-new" hidden style="border-top:1px solid var(--line);border-bottom:0">
     <label>New library folder inside this one: <input id="pick-name" value="Pettagam" style="font:inherit;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink)"></label>
     <div class="hint" style="margin:6px 0 0">It is created when files are placed. Leave empty to use the folder itself.</div>
@@ -469,7 +482,7 @@ async function openDir(path) {
   $("pick-up").disabled = d.parent === null;
   $("pick-ok").disabled = !d.path;
   $("pick-list").innerHTML = (d.error ? `<div class="hint">${esc(d.error)}</div>` : "") +
-    (d.dirs.length ? d.dirs.map((x) => `<div data-path="${esc(x.path)}">📁 ${esc(x.name)}</div>`).join("") : `<div class="hint">No folders inside.</div>`);
+    (d.dirs.length ? d.dirs.map((x) => `<button type="button" role="listitem" data-path="${esc(x.path)}"><span aria-hidden="true">📁 </span>${esc(x.name)}</button>`).join("") : `<div class="hint">No folders inside.</div>`);
 }
 $("pick-list").onclick = (e) => { const p = e.target.closest("[data-path]"); if (p) openDir(p.dataset.path); };
 $("pick-up").onclick = () => openDir(pickParent || "");
@@ -497,13 +510,24 @@ const dateOf = (r) => new Date(1000 * (r.taken || r.mtime));
 const tagsOf = (r) => (r.tags || "").split(",").filter(Boolean);
 
 function showTab(name) {
-  document.querySelectorAll("[data-tab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
+  document.querySelectorAll("[data-tab]").forEach((b) => {
+    b.setAttribute("aria-selected", String(b.dataset.tab === name));
+    b.tabIndex = b.dataset.tab === name ? 0 : -1;
+  });
   $("tab-organize").hidden = name !== "organize";
   $("tab-explore").hidden = name !== "explore";
   if (name === "explore") { loadFacets(); loadExplore(true); loadStats(); }
   try { localStorage.setItem("pettagam-tab", name); } catch (e) {}
 }
 document.querySelectorAll("[data-tab]").forEach((b) => b.onclick = () => showTab(b.dataset.tab));
+document.querySelector("[role=tablist]").addEventListener("keydown", (e) => {
+  const tabs = [...document.querySelectorAll("[data-tab]")], i = tabs.indexOf(document.activeElement);
+  const to = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[e.key];
+  if (i < 0 || to === undefined) return;
+  e.preventDefault();
+  const t = tabs[(to + tabs.length) % tabs.length];
+  showTab(t.dataset.tab); t.focus();
+});
 
 async function loadStats() {
   try {
@@ -523,7 +547,7 @@ async function loadFacets() {
   facetsLoaded = true;
   $("ex-cat").innerHTML = `<option value="">All kinds</option>` + f.categories.map(([c, n]) => `<option value="${esc(c)}">${esc(c)} (${fmtN(n)})</option>`).join("");
   $("ex-year").innerHTML = `<option value="">Any year</option>` + f.years.filter(Boolean).map((y) => `<option>${esc(y)}</option>`).join("");
-  $("ex-tags").innerHTML = f.tags.slice(0, 40).map(([t, n]) => `<span class="chip" data-tag="${esc(t)}">${esc(t)} · ${fmtN(n)}</span>`).join("");
+  $("ex-tags").innerHTML = f.tags.slice(0, 40).map(([t, n]) => `<button type="button" class="chip" data-tag="${esc(t)}" aria-pressed="${t === exTag}" aria-label="${esc(t)}, ${fmtN(n)} files">${esc(t)} · ${fmtN(n)}</button>`).join("");
 }
 
 let exTag = "", exItems = [];
@@ -534,9 +558,9 @@ async function loadExplore(reset) {
   const html = d.items.map((r) => {
     const i = exItems.push(r) - 1;
     const thumb = IMG.test(r.dest) ? `<img loading="lazy" src="${fileUrl(r.dest)}" alt="">` : `<span class="ext">${esc((r.dest.split(".").pop() || "file").slice(0, 5))}</span>`;
-    return `<div class="tile" data-item="${i}"><div class="thumb">${thumb}</div><div class="meta"><b title="${esc(r.dest)}">${esc(r.name)}</b>` +
-      `<span class="hint">${dateOf(r).toLocaleDateString()} · ${fmtB(r.size)}</span>` +
-      `<div class="chips">${tagsOf(r).slice(0, 4).map((t) => `<span class="chip" data-tag="${esc(t)}">${esc(t)}</span>`).join("")}</div></div></div>`;
+    return `<div class="tile"><button type="button" class="open" data-item="${i}"><div class="thumb">${thumb}</div><div class="meta"><b title="${esc(r.dest)}">${esc(r.name)}</b>` +
+      `<span class="hint">${dateOf(r).toLocaleDateString()} · ${fmtB(r.size)}</span></div></button>` +
+      `<div class="meta chips">${tagsOf(r).slice(0, 4).map((t) => `<button type="button" class="chip" data-tag="${esc(t)}">${esc(t)}</button>`).join("")}</div></div>`;
   }).join("");
   if (reset) $("ex-grid").innerHTML = html; else $("ex-grid").insertAdjacentHTML("beforeend", html);
   exOffset += d.items.length;
@@ -548,19 +572,22 @@ $("ex-cat").onchange = $("ex-year").onchange = () => loadExplore(true);
 $("ex-more").onclick = () => loadExplore(false);
 document.addEventListener("click", (e) => {
   const chip = e.target.closest("[data-tag]");
-  if (chip) { e.stopPropagation(); exTag = exTag === chip.dataset.tag ? "" : chip.dataset.tag; if ($("detail").open) $("detail").close(); showTab("explore"); return; }
+  if (chip) { e.stopPropagation(); exTag = exTag === chip.dataset.tag ? "" : chip.dataset.tag;
+    document.querySelectorAll("#ex-tags [data-tag]").forEach((c) => c.setAttribute("aria-pressed", String(c.dataset.tag === exTag)));
+    if ($("detail").open) $("detail").close(); showTab("explore"); return; }
   const tile = e.target.closest("[data-item]");
   if (tile) openDetail(exItems[+tile.dataset.item]);
 }, true);
 
 function openDetail(r) {
   const url = fileUrl(r.dest);
-  $("dt-preview").innerHTML = IMG.test(r.dest) ? `<img src="${url}" alt="">` : VID.test(r.dest) ? `<video src="${url}" controls preload="metadata"></video>`
-    : /\.pdf$/i.test(r.dest) ? `<iframe src="${url}" title="Preview"></iframe>` : `<p class="hint" style="padding:30px">No preview for this kind of file. Use Open.</p>`;
+  $("dt-preview").innerHTML = IMG.test(r.dest) ? `<img src="${url}" alt="${esc(r.name)}">` : VID.test(r.dest) ? `<video src="${url}" controls preload="metadata"></video>`
+    : /\.pdf$/i.test(r.dest) ? `<iframe src="${url}" title="Preview of ${esc(r.name)}"></iframe>` : `<p class="hint" style="padding:30px">No preview for this kind of file. Use Open.</p>`;
   const rows = [["Library", r.dest], ["Was", r.original], ["Date", dateOf(r).toLocaleString() + (r.taken ? " (taken)" : " (last changed)")],
     ["Size", fmtB(r.size)], ["Kind", [r.category, r.subtype].filter(Boolean).join(" / ")], ["Camera", r.camera], ["Your rule", r.rule],
-    ["Description", r.description], ["Tags", tagsOf(r).map((t) => `<span class="chip" data-tag="${esc(t)}">${esc(t)}</span>`).join(" ")]];
+    ["Description", r.description], ["Tags", tagsOf(r).map((t) => `<button type="button" class="chip" data-tag="${esc(t)}">${esc(t)}</button>`).join(" ")]];
   $("dt-info").innerHTML = rows.filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${k === "Tags" ? v : esc(v)}</dd>`).join("");
+  $("dt-title").textContent = r.name;
   $("dt-open").href = url;
   $("detail").showModal();
 }
