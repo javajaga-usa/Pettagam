@@ -122,10 +122,63 @@ def connect(path: str) -> sqlite3.Connection:
                     MIGRATIONS[v](con)
                 con.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
     con.executescript(SCHEMA)
+    ensure_search(con)
     if version < SCHEMA_VERSION:
         con.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         con.commit()
     return con
+
+
+# Word search for Explore and `find`: an SQLite full-text index with the trigram tokenizer, which finds any
+# piece of a word of 3 or more letters (like LIKE '%word%', ignoring case) without reading every row.
+# Library files only: placed files have rowid 2*id, inbox files 2*id+1. Triggers keep it in step.
+# Python builds whose SQLite lacks FTS5 or trigram (older than 3.34) get no index; search then uses LIKE.
+SEARCH_TEXT = "COALESCE({p}.dest,'')||char(10)||COALESCE({p}.tags,'')||char(10)||COALESCE({p}.description,'')" \
+              "||char(10)||COALESCE({p}.camera,'')"
+SEARCH = [  # run one by one, in one transaction (see ensure_search)
+    """CREATE VIRTUAL TABLE search USING fts5(text, tokenize='trigram')""",
+    f"""CREATE TRIGGER files_search_ins AFTER INSERT ON files WHEN new.action='place' AND new.status='done' BEGIN
+    INSERT INTO search(rowid, text) VALUES (2*new.id, {SEARCH_TEXT.format(p="new")}); END""",
+    """CREATE TRIGGER files_search_del AFTER DELETE ON files BEGIN DELETE FROM search WHERE rowid=2*old.id; END""",
+    f"""CREATE TRIGGER files_search_upd AFTER UPDATE OF dest, tags, description, camera, action, status ON files BEGIN
+    DELETE FROM search WHERE rowid=2*old.id;
+    INSERT INTO search(rowid, text) SELECT 2*new.id, {SEARCH_TEXT.format(p="new")}
+        WHERE new.action='place' AND new.status='done'; END""",
+    f"""CREATE TRIGGER inbox_search_ins AFTER INSERT ON inbox WHEN new.action='placed' BEGIN
+    INSERT INTO search(rowid, text) VALUES (2*new.id+1, {SEARCH_TEXT.format(p="new")}); END""",
+    """CREATE TRIGGER inbox_search_del AFTER DELETE ON inbox BEGIN DELETE FROM search WHERE rowid=2*old.id+1; END""",
+    f"""CREATE TRIGGER inbox_search_upd AFTER UPDATE OF dest, tags, description, camera, action ON inbox BEGIN
+    DELETE FROM search WHERE rowid=2*old.id+1;
+    INSERT INTO search(rowid, text) SELECT 2*new.id+1, {SEARCH_TEXT.format(p="new")} WHERE new.action='placed'; END""",
+    f"""INSERT INTO search(rowid, text) SELECT 2*f.id, {SEARCH_TEXT.format(p="f")} FROM files f
+    WHERE f.action='place' AND f.status='done'""",
+    f"""INSERT INTO search(rowid, text) SELECT 2*i.id+1, {SEARCH_TEXT.format(p="i")} FROM inbox i WHERE i.action='placed'""",
+]
+
+
+def has_search(con) -> bool:
+    return bool(con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='search'").fetchone())
+
+
+def ensure_search(con) -> None:
+    """Build the word-search index once, from what is already in the catalog."""
+    if has_search(con):
+        return
+    try:
+        con.execute("CREATE VIRTUAL TABLE temp.probe USING fts5(x, tokenize='trigram')")
+        con.execute("DROP TABLE temp.probe")
+    except sqlite3.OperationalError:
+        return  # this SQLite can't; search falls back to LIKE
+    con.commit()
+    con.execute("BEGIN IMMEDIATE")  # one writer: the panel may open the catalog from two threads at once
+    try:
+        if not has_search(con):
+            for stmt in SEARCH:
+                con.execute(stmt)
+        con.commit()
+    except BaseException:
+        con.rollback()
+        raise
 
 
 def _backup(con, dest: str) -> None:

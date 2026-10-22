@@ -96,7 +96,7 @@ def bench_search(rows: int = 1_000_000, searches=("", "beach 2019", "IMG_12345")
     """Build a made-up catalog of `rows` placed files in memory and time Explore over it: the opening view
     (newest first), a common word and a rare one. The slowest counts."""
     from . import library
-    from .db import SCHEMA
+    from .db import SCHEMA, ensure_search
     con = sqlite3.connect(":memory:")
     con.row_factory = sqlite3.Row
     con.executescript(SCHEMA)
@@ -108,6 +108,7 @@ def bench_search(rows: int = 1_000_000, searches=("", "beach 2019", "IMG_12345")
         ((f"old/{i}.jpg", f"IMG_{i}.jpg", 1000 + i, 1.2e9 + i * 300, f"{cats[i % 5]}/{2000 + i % 25}/IMG_{i}.jpg",
           cats[i % 5], tags[i % 6] or None, "Apple iPhone" if i % 3 else None) for i in range(rows)))
     con.commit()
+    ensure_search(con)  # as a real catalog has it (built once, not timed)
     each = {}
     for words in searches:
         t0 = time.perf_counter()

@@ -319,8 +319,9 @@ Threat model: Pettagam runs as the owner on their own computer. The panel is a w
 | PERF-1 | The scan should examine at least 1,000 files per second on the N300 Pro with 2 workers and the catalog on the SSD. | `pettagam bench` (FR-BENCH-1); N300 number still to record (gap G-12) |
 | PERF-2 | Hardlink placement should run at least 2,000 files per second on the same drive. | `pettagam bench`; N300 number still to record (gap G-12) |
 | PERF-3 | Duplicate detection shall read in full only files that share both size and a 64 KB sample with another file. | `test_library.py::test_stats_and_duplicates` |
-| PERF-4 | The panel's Explore tab should answer a search over 1 million files in under 1 second. | `pettagam bench`; `test_bench.py::test_search_over_many_files_is_quick` (100,000 files in CI). In the build container, 1 million files: opening view 0.02-0.04 s, word searches 0.5-1.0 s |
+| PERF-4 | The panel's Explore tab should answer a search over 1 million files in under 1 second. | `pettagam bench`; `test_bench.py::test_search_over_many_files_is_quick` (100,000 files in CI). In the build container, 1 million files: opening view 0.02 s, a rare word 0.003 s, a common word 0.1 s, a 1-2 letter word (no index) 0.5 s |
 | PERF-6 | Explore's opening view (newest first) shall come from an index, not by sorting the whole library, and placed and inbox files shall be merged in date order with pages that join up. | `test_bench.py::test_newest_first_uses_the_index`, `test_bench.py::test_search_merges_placed_and_inbox_files_newest_first` |
+| PERF-7 | Words of 3 or more letters shall be found through an SQLite full-text index (FTS5, trigram tokenizer) over the folder and name, tags, description and camera of library files, with the same results as a plain substring search. The index shall be built once for an existing catalog and kept in step by triggers (placing, undo, tagging, inbox, a fresh scan). Where Python's SQLite lacks trigram search, search shall still work (slower) and the health check shall say so. | `test_catalog.py::test_word_search_index_finds_what_like_finds`, `test_catalog.py::test_word_search_index_follows_every_change`, `test_catalog.py::test_old_catalog_gets_the_search_index`, `test_catalog.py::test_health_check_reports_the_search_index` |
 | PERF-5 | The background jobs shall run at low priority (`Nice=10`, idle I/O) so they don't slow the computer. | `test_requirements.py::test_background_jobs_run_at_low_priority_as_the_user` |
 
 ### 6.5 Usability
@@ -417,7 +418,7 @@ The audit compared the 0.3.0 code, tests and README against the requirements abo
 
 | Gap | Finding | Recommendation | Owner decision needed? |
 | --- | --- | --- | --- |
-| G-12 | Performance targets (PERF-1, 2, 4) have not been measured on the N300 Pro yet. `pettagam bench` now measures all three; it found that Explore's opening view took 2.3 s over a million files (fixed with an index: 0.03 s). Word searches over a million files take 0.5-1.0 s, close to the target. | Run `pettagam bench "/Volumes/N300/Old files" --library /Volumes/N300/Pettagam` once, just after plugging in the drive, and paste the numbers here. If word searches are too slow on the Mac, the next step is an SQLite full-text index. | No |
+| G-12 | Performance targets (PERF-1, 2, 4) have not been measured on the N300 Pro yet. `pettagam bench` measures all three. In the build container Explore over a million files now opens in 0.02 s and finds a word in 0.003-0.1 s (full-text index, PERF-7). | Run `pettagam bench "/Volumes/N300/Old files" --library /Volumes/N300/Pettagam` once, just after plugging in the drive, and paste the numbers here. | No |
 
 ## 10. Verification and change control
 

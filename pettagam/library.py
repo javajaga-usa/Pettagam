@@ -6,10 +6,11 @@ The panel's Explore tab and the `find`, `stats` and `duplicates` commands share 
 import csv
 import heapq
 import itertools
+import math
 import os
 import time
 
-from .db import get_meta
+from .db import get_meta, has_search
 from .safeio import durable_copy
 
 # Every file in the library: placed from the old files, or sorted from the inbox. The WHERE clauses match
@@ -30,7 +31,12 @@ def search(con, q: str = "", category: str = "", tag: str = "", year: str = "",
            offset: int = 0, limit: int = 120) -> dict:
     """Search by words in the name, folder, tags, description or camera, plus optional filters."""
     where, args = ["1=1"], []
+    indexed = has_search(con)
+    fts = []
     for word in q.split():
+        if indexed and len(word) >= 3:  # the trigram index needs 3 letters
+            fts.append('"' + word.replace('"', '""') + '"')
+            continue
         where.append("(dest LIKE ? OR tags LIKE ? OR description LIKE ? OR camera LIKE ?)")
         args += [f"%{word}%"] * 4
     if category:
@@ -42,20 +48,26 @@ def search(con, q: str = "", category: str = "", tag: str = "", year: str = "",
     if year:
         where.append(f"{YEAR} = ?")
         args.append(str(year))
-    w = " AND ".join(where)
     # Each table on its own, so its index gives the newest files without sorting the whole library;
     # then the two short lists are merged.
     total, parts = 0, []
-    for part, table in ((PLACED_SQL, "files"), (INBOX_SQL, "inbox")):
-        sql = f"{part} AND {w}"
-        n = con.execute(f"SELECT COUNT(*) FROM ({sql})", args).fetchone()[0]
+    for part, table, odd in ((PLACED_SQL, "files", 0), (INBOX_SQL, "inbox", 1)):
+        cond, a = list(where), list(args)
+        if fts:
+            cond.append("id IN (SELECT rowid >> 1 FROM search WHERE search MATCH ? AND rowid & 1 = ?)")
+            a += [" AND ".join(fts), odd]
+        sql = f"{part} AND {' AND '.join(cond)}"
+        n = con.execute(f"SELECT COUNT(*) FROM ({sql})", a).fetchone()[0]
         total += n
         if not n:
             continue
         if n < 3 * (offset + limit):  # few matches: reading the table and sorting them beats walking the index
             sql = sql.replace(f"FROM {table} WHERE", f"FROM {table} NOT INDEXED WHERE")
-        parts.append([dict(r) for r in con.execute(f"{sql} {NEWEST} LIMIT ?", (*args, offset + limit))])
-    newest = heapq.merge(*parts, key=lambda r: (-(r["taken"] if r["taken"] is not None else r["mtime"]), r["dest"]))
+        parts.append([dict(r) for r in con.execute(f"{sql} {NEWEST} LIMIT ?", (*a, offset + limit))])
+    def newest_first(r):  # as NEWEST orders them: a file without a date comes last
+        when = r["taken"] if r["taken"] is not None else r["mtime"]
+        return (-when if when is not None else math.inf, r["dest"])
+    newest = heapq.merge(*parts, key=newest_first)
     return {"items": list(itertools.islice(newest, offset, offset + limit)), "total": total}
 
 
