@@ -1,5 +1,4 @@
 """SQLite catalog: one row per source file, plus key/value settings."""
-from __future__ import annotations
 
 import sqlite3
 

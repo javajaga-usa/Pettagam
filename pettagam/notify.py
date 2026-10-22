@@ -1,5 +1,4 @@
 """A desktop notification after a background inbox pass. It never fails the pass: no desktop, no notice."""
-from __future__ import annotations
 
 import shutil
 import subprocess

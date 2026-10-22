@@ -15,6 +15,7 @@ All notable changes to Pettagam. Versions follow [semantic versioning](https://s
 - `SECURITY.md`.
 
 ### Changed
+- CI lints the code with `ruff` and checks that the shell scripts parse; the code uses Python 3.13 syntax throughout.
 - Copies (placing across drives, inbox, undo, export) are flushed to the disk and checked before they get their name, and an inbox file is removed only after that. Moves and copies never replace an existing file, even one that appears at the last moment.
 - Placing, inbox sorting and undo share one lock per library, so they never run at the same time (the lock file is now `_meta/library.lock`).
 - The panel only answers requests addressed to this computer (stops DNS-rebinding attacks from websites), accepts only JSON up to 2 MB, checks settings, and sends security headers. Library files it shows run in a sandbox, so an HTML or SVG file with scripts can't act as the panel.

@@ -1,5 +1,4 @@
 """Phase 1: read-only inventory of the source tree."""
-from __future__ import annotations
 
 import os
 import time

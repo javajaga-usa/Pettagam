@@ -1,7 +1,6 @@
 """Looking after the library over time: undo a placement, keep a copy of the catalog with the library,
 and follow the files when the drive is mounted somewhere else (for example after moving to Ubuntu).
 """
-from __future__ import annotations
 
 import os
 import sqlite3

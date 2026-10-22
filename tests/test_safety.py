@@ -13,10 +13,10 @@ from pettagam import cli, doctor, panel, safeio, service
 from pettagam.apply import apply
 from pettagam.maintenance import undo
 from pettagam.verify import verify
+
 from test_maintenance import placed  # noqa: F401  (fixture)
 from test_panel import call, server, wait_job  # noqa: F401  (fixture)
 from test_pipeline import jpeg, quiet, run_all, write
-
 
 # --- careful file operations ---------------------------------------------------
 

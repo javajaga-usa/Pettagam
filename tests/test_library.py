@@ -9,6 +9,7 @@ from pettagam.apply import apply
 from pettagam.doctor import run_checks
 from pettagam.fixity import check, summary
 from pettagam.library import duplicate_groups, search, stats
+
 from test_pipeline import jpeg, quiet, run_all, write
 
 

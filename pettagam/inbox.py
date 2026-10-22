@@ -5,7 +5,6 @@ Unlike the old-files folder, the inbox is emptied: each file is moved into the l
 the same drive, otherwise copy, flush to disk, check in full, then remove). Exact copies of files the library already has
 go to <inbox>/_duplicates/ instead, so nothing is ever deleted.
 """
-from __future__ import annotations
 
 import csv
 import os
@@ -132,7 +131,7 @@ def _sort(con, inbox, library, rules, settle, dry_run, progress) -> dict:
             continue
         e = _examine(inbox, rel, st)
         row = dict(zip(("path", "name", "size", "mtime", "dev", "ino", "ext", "kind", "width", "height",
-                        "camera", "has_exif", "has_tags", "junk", "taken"), e))
+                        "camera", "has_exif", "has_tags", "junk", "taken"), e, strict=True))
         src = os.path.join(inbox, rel)
         r, folder, rule = decide(row, rules)
         stamp = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -193,7 +192,7 @@ def _record(con, original, dest, action, row, r, rule, h, err):
 
 
 def _remove_empty_dirs(root: str) -> None:
-    for d, subdirs, files in os.walk(root, topdown=False):
+    for d, _, _ in os.walk(root, topdown=False):
         if d != root and not os.listdir(d):
             try:
                 os.rmdir(d)

@@ -295,6 +295,7 @@ See [SECURITY.md](SECURITY.md) for how to report a problem.
 ```
 python3 -m pip install -e ".[dev]"
 python3 -m pytest
+ruff check .
 ```
 
 Requirements, with the test that checks each one, are in [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md); a change in behaviour updates that file, the tests and [CHANGELOG.md](CHANGELOG.md) together. CI runs the tests on macOS and Ubuntu with Python 3.13 and 3.14 (and once with the optional extras) for every pull request, and checks that the built package installs. To release, update the version in `pettagam/__init__.py` (the package reads it from there), add a CHANGELOG section, and push a tag such as `v0.4.0`: the release workflow tests it, builds the package, and publishes a GitHub release with that CHANGELOG section as its notes.

@@ -13,7 +13,6 @@ Conditions: category, subtype, ext, kind, name, path (wildcards like *tax*), nam
 size_over, size_under, older_than, newer_than, year, confidence_below, tags (set by `pettagam tag`).
 Every condition in "if" must hold. Use {"any": [...]} for "or" and {"not": {...}} for "but not".
 """
-from __future__ import annotations
 
 import fnmatch
 import json
@@ -21,7 +20,6 @@ import os
 import re
 import time
 from dataclasses import dataclass
-from typing import Optional
 
 RULES_FILE = os.path.join("_meta", "rules.json")
 BAD_FOLDER_CHARS = re.compile(r'[\\:*?"<>|\x00-\x1f]')  # same set as plan.BAD_CHARS, minus "/"
@@ -168,7 +166,7 @@ def parse_rules(data) -> list:
     return rules
 
 
-def load_rules(path: Optional[str]) -> list:
+def load_rules(path: str | None) -> list:
     """Rules from a JSON file; a missing file means no rules."""
     if not path or not os.path.exists(path):
         return []
@@ -183,7 +181,7 @@ def load_rules(path: Optional[str]) -> list:
         raise RuleError(f"{path}: {e}") from None
 
 
-def default_path(library: Optional[str]) -> Optional[str]:
+def default_path(library: str | None) -> str | None:
     return os.path.join(library, RULES_FILE) if library else None
 
 
@@ -223,7 +221,7 @@ def date_parts(f) -> time.struct_time:
     return time.gmtime(f["taken"]) if f["taken"] else time.localtime(f["mtime"])
 
 
-def matches(c: dict, f: dict, now: Optional[float] = None) -> bool:
+def matches(c: dict, f: dict, now: float | None = None) -> bool:
     now = time.time() if now is None else now
     for key, v in c.items():
         if key in FIELDS:
@@ -273,7 +271,7 @@ def render(template: str, f: dict) -> str:
     return "/".join(parts)
 
 
-def first_match(rules: list, f: dict, now: Optional[float] = None):
+def first_match(rules: list, f: dict, now: float | None = None):
     """(rule, folder) for the first rule that matches, else (None, None)."""
     for r in rules:
         if matches(r.cond, f, now):

@@ -2,7 +2,6 @@
 
 The panel's Explore tab and the `find`, `stats` and `duplicates` commands share these.
 """
-from __future__ import annotations
 
 import csv
 import os

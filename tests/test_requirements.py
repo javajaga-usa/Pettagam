@@ -8,6 +8,7 @@ from pettagam import classify as cl, service
 from pettagam.doctor import run_checks
 from pettagam.plan import folder_for
 from pettagam.tag import TEXT_BYTES, content_for
+
 from test_maintenance import placed  # noqa: F401  (fixture)
 from test_pipeline import quiet  # noqa: F401
 
@@ -82,7 +83,7 @@ def test_python_minimum_is_the_same_everywhere():  # PLAT-7
     import pettagam
     with open(os.path.join(ROOT, "pyproject.toml"), "rb") as f:
         project = tomllib.load(f)["project"]
-    want = "%d.%d" % pettagam.MIN_PYTHON
+    want = "{}.{}".format(*pettagam.MIN_PYTHON)
     assert want == "3.13"
     assert project["requires-python"] == ">=" + want
     assert f"Programming Language :: Python :: {want}" in project["classifiers"]
@@ -91,7 +92,7 @@ def test_python_minimum_is_the_same_everywhere():  # PLAT-7
     assert f'PETTAGAM_MIN_PYTHON="{want}"' in sh and "sys.version_info >= (3, 13)" in sh
     with open(os.path.join(ROOT, ".github", "workflows", "tests.yml"), encoding="utf-8") as f:
         ci = f.read()
-    assert re.search(r'python: \["%s"' % re.escape(want), ci)
+    assert re.search(rf'python: \["{re.escape(want)}"', ci)
     for doc in ("README.md", os.path.join("docs", "REQUIREMENTS.md")):
         with open(os.path.join(ROOT, doc), encoding="utf-8") as f:
             assert "3.9 or newer" not in f.read(), doc

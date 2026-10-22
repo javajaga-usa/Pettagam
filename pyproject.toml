@@ -36,7 +36,7 @@ fast = ["xxhash>=3,<5"]
 # AI tagging (pettagam tag). Needs an Anthropic API key.
 ai = ["anthropic>=1,<3"]
 all = ["pettagam[fast,ai]"]
-dev = ["pytest>=7", "build>=1"]
+dev = ["pytest>=7", "build>=1", "ruff>=0.16"]
 
 [project.scripts]
 pettagam = "pettagam.cli:main"
@@ -60,3 +60,18 @@ pettagam = ["panel.html"]
 minversion = "7.0"
 testpaths = ["tests"]
 addopts = "-ra"
+
+[tool.ruff]
+target-version = "py313"
+line-length = 120
+
+[tool.ruff.lint]
+# pyflakes and pycodestyle errors, bugbear, modern syntax for 3.13, sorted imports.
+select = ["E4", "E7", "E9", "F", "B", "UP", "I"]
+# Short local lambdas (q = lambda sql: ...) are the house style for one-line query helpers.
+ignore = ["E731"]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+known-first-party = ["pettagam"]
+known-local-folder = ["test_*", "conftest"]

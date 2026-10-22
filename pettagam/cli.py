@@ -23,7 +23,6 @@
 The catalog is $PETTAGAM_DB if set, else ./pettagam.db if it exists, else the panel's
 catalog in ~/.pettagam/pettagam.db, so the panel and the command line share one catalog.
 """
-from __future__ import annotations
 
 import argparse
 import json

@@ -1,9 +1,8 @@
 import os
 import plistlib
 import sqlite3
-import time
-
 import sys
+import time
 
 import pytest
 
@@ -14,6 +13,7 @@ from pettagam.doctor import run_checks
 from pettagam.inbox import sort_inbox
 from pettagam.maintenance import CATALOG_COPY, backup_catalog, relocate, undo
 from pettagam.verify import verify
+
 from test_pipeline import jpeg, quiet, run_all, write
 
 

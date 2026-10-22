@@ -9,6 +9,7 @@ from http.server import ThreadingHTTPServer
 import pytest
 
 from pettagam import panel
+
 from test_pipeline import jpeg, write
 
 

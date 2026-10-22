@@ -9,10 +9,11 @@ from pettagam import cli
 from pettagam.apply import apply
 from pettagam.db import connect
 from pettagam.inbox import DUPES, sort_inbox
-from pettagam.rules import RuleError, STARTER, load_rules, parse_rules, write_starter
+from pettagam.rules import STARTER, RuleError, load_rules, parse_rules, write_starter
 from pettagam.sniff import sniff_bytes
 from pettagam.tag import tag_library
 from pettagam.views import build_views, parse_views
+
 from test_pipeline import jpeg, png, quiet, run_all, write
 
 
@@ -86,8 +87,8 @@ def test_rules_steer_the_dry_run(tmp_path):
         {"name": "Switched off", "if": {"ext": "pdf"}, "then": "nowhere", "off": True},
     ]))
     con = connect(str(tmp_path / "p.db"))
-    from pettagam.scan import scan
     from pettagam.plan import plan
+    from pettagam.scan import scan
     scan(con, s, progress=quiet)
     age(src / "papers" / "Tax return 2021.pdf", 0)
     plan(con, str(lib), rules=rules, progress=quiet)

@@ -7,7 +7,6 @@ Both run `pettagam inbox` once per trigger, so a pass never overlaps another.
 Alongside it, a weekly damage check (`pettagam fixity --minutes 30`) reads part of the library each
 Sunday night, so over a few weeks every file is checked again, with a notification if any is damaged.
 """
-from __future__ import annotations
 
 import json
 import os
@@ -176,7 +175,6 @@ def install(db: str, inbox: str, library: str, every: int = 300, platform=None, 
     if plat == "other":
         raise SystemExit("Automatic sorting is available on macOS and Linux. Use `pettagam inbox --watch` instead.")
     uninstall(platform=platform, home=home, runner=runner)
-    h = _home(home)
     log = _log_path(home)
     from .safeio import private_dir
     private_dir(os.path.dirname(log))
@@ -186,14 +184,14 @@ def install(db: str, inbox: str, library: str, every: int = 300, platform=None, 
     fx = fixity_command(db, library, python)
     if plat == "mac":
         started = True
-        for p, label, c in zip(paths, (LABEL, FIXITY_LABEL), (cmd, fx)):
+        for p, label, c in zip(paths, (LABEL, FIXITY_LABEL), (cmd, fx), strict=True):
             with open(p, "w", encoding="utf-8") as f:
                 f.write(_plist(c, inbox, every, log, label))
             uid = os.getuid()
             started = (_run(runner, ["launchctl", "bootstrap", f"gui/{uid}", p]) or
                        _run(runner, ["launchctl", "load", "-w", p])) and started
     else:
-        for p, text in zip(paths, _units(cmd, inbox, every, log, fx).values()):
+        for p, text in zip(paths, _units(cmd, inbox, every, log, fx).values(), strict=True):
             with open(p, "w", encoding="utf-8") as f:
                 f.write(text)
         started = _run(runner, ["systemctl", "--user", "daemon-reload"]) and _run(

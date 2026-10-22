@@ -3,11 +3,9 @@
 Each file gets (category, subtype, confidence, reason). Files below REVIEW_BELOW are planned
 into review/<category>/ instead of being guessed. AI enrichment (later milestone) refines these.
 """
-from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Optional
 
 REVIEW_BELOW = 0.6
 
@@ -64,7 +62,7 @@ DOC_KEYWORDS = [
 @dataclass
 class Result:
     category: str
-    subtype: Optional[str]
+    subtype: str | None
     confidence: float
     reason: str
 
@@ -82,7 +80,7 @@ def normalize_ext(name: str) -> str:
     return ALIASES.get(ext, ext)
 
 
-def is_junk(name: str, size: int) -> Optional[str]:
+def is_junk(name: str, size: int) -> str | None:
     lower = name.lower()
     if lower in JUNK_NAMES:
         return "system file"
@@ -95,7 +93,7 @@ def is_junk(name: str, size: int) -> Optional[str]:
     return None
 
 
-def effective_ext(name_ext: str, kind: Optional[str]) -> str:
+def effective_ext(name_ext: str, kind: str | None) -> str:
     """Trust the content when the extension is missing or clearly wrong."""
     if not kind:
         return name_ext

@@ -4,7 +4,6 @@ Stdlib only. Binds to 127.0.0.1 by default, so only this computer can open it. R
 computer as the host (which stops other websites reaching it through DNS rebinding), and on the network
 every request needs the secret token from the start-up link.
 """
-from __future__ import annotations
 
 import json
 import mimetypes

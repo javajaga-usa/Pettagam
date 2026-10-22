@@ -4,17 +4,18 @@ Each check gives ok / warn / fail with one plain sentence and, when something is
 Nothing is changed, except that a tiny test file is written to the library folder and removed again
 to see whether hardlinks work there.
 """
-from __future__ import annotations
 
 import importlib.util
 import os
-import time
 import shutil
 import sys
 import tempfile
+import time
 
 from . import MIN_PYTHON
 from .db import get_meta
+
+MIN = f"{MIN_PYTHON[0]}.{MIN_PYTHON[1]}"
 
 
 def _check(status: str, name: str, text: str, fix: str = "") -> dict:
@@ -114,7 +115,7 @@ def _python_ok(python) -> bool:
         return False
     import subprocess
     try:
-        return subprocess.run([python, "-c", "import sys; raise SystemExit(sys.version_info < %r)" % (MIN_PYTHON,)],
+        return subprocess.run([python, "-c", f"import sys; raise SystemExit(sys.version_info < {MIN_PYTHON!r})"],
                               capture_output=True, timeout=20).returncode == 0
     except (OSError, subprocess.SubprocessError):
         return False
@@ -128,7 +129,7 @@ def run_checks(con=None, source: str = None, library: str = None, inbox: str = N
 
     v = sys.version_info
     out.append(_check("ok" if v >= MIN_PYTHON else "fail", "Python", f"Python {v.major}.{v.minor}.{v.micro}",
-                      "" if v >= MIN_PYTHON else "Install Python %d.%d or newer." % MIN_PYTHON))
+                      "" if v >= MIN_PYTHON else f"Install Python {MIN} or newer."))
 
     if not source:
         out.append(_check("warn", "Old files", "Not chosen yet.", "Run a dry run, or choose the folder in the panel."))
@@ -199,8 +200,8 @@ def run_checks(con=None, source: str = None, library: str = None, inbox: str = N
         if not st["installed"]:
             out.append(_check("ok", "Automatic inbox", "Off. The inbox is sorted when you ask."))
         elif st.get("python") != sys.executable and not _python_ok(st.get("python")):
-            out.append(_check("fail", "Automatic inbox", "On, but it runs a Python older than %d.%d (or one that is gone), "
-                              "so it fails." % MIN_PYTHON, "Run `pettagam service refresh` (or Setup again)."))
+            out.append(_check("fail", "Automatic inbox", f"On, but it runs a Python older than {MIN} (or one that is gone), "
+                              "so it fails.", "Run `pettagam service refresh` (or Setup again)."))
         else:
             out.append(_check("ok", "Automatic inbox", st["text"]))
     except Exception:  # never let the health check itself fail
