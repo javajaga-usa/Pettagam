@@ -6,10 +6,10 @@ from __future__ import annotations
 
 import csv
 import os
-import shutil
 import time
 
 from .db import get_meta
+from .safeio import durable_copy
 
 # Every file in the library: placed from the old files, or sorted from the inbox.
 ITEMS_SQL = """
@@ -173,8 +173,7 @@ def export(con, dest: str, q: str = "", category: str = "", tag: str = "", year:
         else:
             try:
                 os.makedirs(os.path.dirname(out), exist_ok=True)
-                shutil.copy2(src, out + ".part")
-                os.replace(out + ".part", out)
+                durable_copy(src, out, check="size")
             except OSError as e:
                 res["errors"] += 1
                 progress(f"  could not copy {it['dest']}: {e.strerror or e}")

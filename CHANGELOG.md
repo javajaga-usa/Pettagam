@@ -4,6 +4,20 @@ All notable changes to Pettagam. Versions follow [semantic versioning](https://s
 
 ## [Unreleased]
 
+### Added
+- **Requirements specification** ([docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)): user stories with acceptance criteria, functional, data-safety, security, privacy, performance and platform requirements, each traced to the code and the test that checks it, plus the audit's findings and open items. `tests/test_requirements.py` fails if the document names a test that doesn't exist.
+- `pettagam verify --full` checksums every copied file instead of a sample.
+- The health check shows the library drive's format, warns when it can't make hardlinks, and notes that Ubuntu can't write APFS.
+- `SECURITY.md`.
+
+### Changed
+- Copies (placing across drives, inbox, undo, export) are flushed to the disk and checked before they get their name, and an inbox file is removed only after that. Moves and copies never replace an existing file, even one that appears at the last moment.
+- Placing, inbox sorting and undo share one lock per library, so they never run at the same time (the lock file is now `_meta/library.lock`).
+- The panel only answers requests addressed to this computer (stops DNS-rebinding attacks from websites), accepts only JSON up to 2 MB, checks settings, and sends security headers. Library files it shows run in a sandbox, so an HTML or SVG file with scripts can't act as the panel.
+- `~/.pettagam/` is created readable by you only. The background log is rotated past 5 MB.
+- Packaging: the version is defined once in `pettagam/__init__.py`; `pyproject.toml` has a readme, classifiers and project links, version ranges for the optional extras (`xxhash>=3,<5`, `anthropic>=1,<3`), an `all` extra, and `build` in `dev`. CI adds Python 3.13, a run with the extras, and a check that the built wheel installs and includes the panel.
+- README: the SSH tunnel is the recommended way to use the panel from another computer, and moving to Ubuntu explains copying from APFS to ext4 with hardlinks kept.
+
 ## [0.3.0] - 2026-10-21
 
 ### Added

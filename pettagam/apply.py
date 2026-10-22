@@ -1,17 +1,18 @@
 """Phase 3: place files into the library. The source is only ever read.
 
-Same filesystem: hardlink (instant, no extra space). Otherwise: copy to a .part file, then rename.
+Same filesystem: hardlink (instant, no extra space). Otherwise: copy to a .part file, flush it to disk,
+check its size, then give it its name. Never replaces a file already in the library.
 Resumable: files already marked done are skipped; an existing identical destination counts as done.
 """
 from __future__ import annotations
 
 import csv
 import os
-import shutil
 import time
 from concurrent.futures import ThreadPoolExecutor
 
 from .db import get_meta
+from .safeio import BUSY, durable_copy, library_lock
 
 
 def choose_method(source: str, library: str) -> str:
@@ -31,9 +32,7 @@ def _place(src: str, dst: str, method: str) -> None:
     if method == "link":
         os.link(src, dst)
     else:
-        tmp = dst + ".part"
-        shutil.copy2(src, tmp)
-        os.replace(tmp, dst)
+        durable_copy(src, dst, check="size")
 
 
 def apply(con, workers: int = 4, method: str = "auto", progress=print) -> dict:
@@ -42,6 +41,17 @@ def apply(con, workers: int = 4, method: str = "auto", progress=print) -> dict:
         raise SystemExit("Run 'pettagam plan' first.")
     if method == "auto":
         method = choose_method(source, library)
+    lock = library_lock(library)
+    if lock is False:
+        raise SystemExit(BUSY)
+    try:
+        return _apply(con, source, library, workers, method, progress)
+    finally:
+        if lock:
+            lock.close()
+
+
+def _apply(con, source, library, workers, method, progress) -> dict:
     progress(f"Placing files by {'hardlink' if method == 'link' else 'copy'} with {workers} workers")
     todo = con.execute(
         "SELECT id, path, dest FROM files WHERE action='place' AND (status IS NULL OR status='error') ORDER BY dest"

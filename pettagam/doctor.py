@@ -52,6 +52,61 @@ def hardlinks_work(folder: str) -> bool:
                 pass
 
 
+def parse_mounts(text: str, path: str, mac: bool):
+    """File system type of the mount that holds path, from `mount` (macOS) or /proc/mounts (Linux) output."""
+    best, kind = "", None
+    for line in text.splitlines():
+        if mac:  # /dev/disk4s1 on /Volumes/N300 Pro (apfs, local, journaled)
+            if " on " not in line or " (" not in line:
+                continue
+            point, _, opts = line.split(" on ", 1)[1].rpartition(" (")
+            fs = opts.split(",")[0].strip(" )")
+        else:  # /dev/sdb1 /srv/ninaivu ext4 rw,relatime 0 0 (spaces in paths are written as \040)
+            parts = line.split()
+            if len(parts) < 3:
+                continue
+            point, fs = parts[1].replace("\\040", " "), parts[2]
+        if (path == point or path.startswith(point.rstrip("/") + "/")) and len(point) >= len(best):
+            best, kind = point, fs.lower()
+    return kind
+
+
+def filesystem(path: str):
+    """'apfs', 'ext4', 'exfat'... for the drive holding path, or None when it can't be told."""
+    path = os.path.realpath(_existing_parent(path))
+    try:
+        if sys.platform == "darwin":
+            import subprocess
+            text = subprocess.run(["mount"], capture_output=True, text=True, timeout=10).stdout
+            return parse_mounts(text, path, mac=True)
+        if sys.platform.startswith("linux"):
+            with open("/proc/mounts", encoding="utf-8") as f:
+                return parse_mounts(f.read(), path, mac=False)
+    except Exception:  # the health check must never fail because of this
+        return None
+    return None
+
+
+NO_LINKS = {"exfat", "msdos", "vfat", "fat32", "ntfs", "fuseblk", "smbfs", "cifs"}
+
+
+def drive_format_check(fs) -> dict:
+    """What the library drive's format means for placing now and for the move to Ubuntu later."""
+    if not fs:
+        return _check("ok", "Drive format", "Not known on this system.")
+    if fs == "apfs":
+        return _check("ok", "Drive format", "APFS: hardlinks work. Note for the move to Ubuntu: Ubuntu can't write "
+                                            "to APFS, so the library will go onto an ext4 drive then "
+                                            "(see Moving to Ubuntu later in the README).")
+    if fs in ("hfs", "hfsplus"):
+        return _check("ok", "Drive format", "Mac OS Extended: hardlinks work. Ubuntu can write to it only with "
+                                            "journaling turned off; plan on ext4 for the move.")
+    if fs in NO_LINKS:
+        return _check("warn", "Drive format", f"{fs}: no hardlinks, so files are copied and views are shortcuts.",
+                      "Use APFS on the Mac or ext4 on Ubuntu for instant placing with no extra space.")
+    return _check("ok", "Drive format", f"{fs}: hardlinks work.")
+
+
 def run_checks(con=None, source: str = None, library: str = None, inbox: str = None,
                db_path: str = None) -> list:
     source = source or (get_meta(con, "source") if con else None)
@@ -97,6 +152,7 @@ def run_checks(con=None, source: str = None, library: str = None, inbox: str = N
             out.append(_check("warn", "Placement", "The library is on a different drive from the old files, so every "
                                                    "file will be copied.",
                               "Put the library on the same drive as the old files to place them instantly."))
+        out.append(drive_format_check(filesystem(where)))
         free = shutil.disk_usage(where).free
         need = 0
         if con is not None and source and not same:

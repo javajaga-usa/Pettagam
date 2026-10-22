@@ -11,12 +11,36 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        python: ["3.9", "3.12"]
+        # 3.9: the macOS Command Line Tools. 3.12: Ubuntu 24.04. 3.13: newest.
+        python: ["3.9", "3.12", "3.13"]
+        extras: ["dev"]
+        include:
+          # The optional extras too (xxhash hashing, the anthropic library), so they keep working.
+          - os: ubuntu-latest
+            python: "3.12"
+            extras: "dev,all"
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - run: python -m pip install pytest .
+      - run: python -m pip install ".[${{ matrix.extras }}]"
       - run: python -m pytest -q
+
+  package:
+    # The wheel installs on its own and carries the panel page.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install build && python -m build
+      - name: Install the wheel in a clean environment
+        run: |
+          python -m venv /tmp/v
+          /tmp/v/bin/pip install dist/*.whl
+          cd /tmp
+          /tmp/v/bin/pettagam --version
+          /tmp/v/bin/python -c "from importlib import resources; assert resources.files('pettagam').joinpath('panel.html').is_file()"

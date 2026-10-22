@@ -17,7 +17,7 @@ echo "Using $("$PY" --version)"
 
 if [ "${1:-}" = "--ai" ]; then
   "$PY" -m venv "$HERE/.venv" 2>/dev/null || { echo "Install venv support first:  sudo apt install python3-venv"; exit 1; }
-  "$HERE/.venv/bin/python" -m pip install --quiet --upgrade pip && "$HERE/.venv/bin/python" -m pip install --quiet "anthropic>=1" \
+  "$HERE/.venv/bin/python" -m pip install --quiet --upgrade pip && "$HERE/.venv/bin/python" -m pip install --quiet "anthropic>=1,<3" \
     && echo "AI tagging is ready. Set your key:  export ANTHROPIC_API_KEY=..." \
     || echo "Could not install AI tagging (no internet?). Everything else works."
 fi

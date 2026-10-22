@@ -7,6 +7,7 @@ import os
 import sqlite3
 
 from .db import connect, get_meta, set_meta
+from .safeio import BUSY, library_lock, move_file
 
 CATALOG_COPY = os.path.join("_meta", "catalog.db")
 
@@ -40,6 +41,17 @@ def undo(con, dry_run: bool = False, progress=print) -> dict:
     source, library = get_meta(con, "source"), get_meta(con, "library")
     if not library:
         raise SystemExit("Nothing to undo: no library in this catalog.")
+    lock = None if dry_run else library_lock(library)
+    if lock is False:
+        raise SystemExit(BUSY)
+    try:
+        return _undo(con, source, library, dry_run, progress)
+    finally:
+        if lock:
+            lock.close()
+
+
+def _undo(con, source, library, dry_run, progress) -> dict:
     counts = {"removed": 0, "kept": 0, "returned": 0}
     kept = []
     for r in con.execute("SELECT id, path, dest, method, size, mtime FROM files "
@@ -66,11 +78,12 @@ def undo(con, dry_run: bool = False, progress=print) -> dict:
             kept.append(f"{r['dest']}: kept, something new is at {r['original']}")
             continue
         if not dry_run:
-            os.makedirs(os.path.dirname(r["original"]), exist_ok=True)
-            if os.stat(os.path.dirname(r["original"])).st_dev == os.stat(dst).st_dev:
-                os.rename(dst, r["original"])
-            else:
-                _copy_back(dst, r["original"])
+            try:
+                move_file(dst, r["original"])  # never replaces; across drives it is checked before removal
+            except OSError as e:
+                counts["kept"] += 1
+                kept.append(f"{r['dest']}: kept, could not return it to the inbox: {e.strerror or e}")
+                continue
             con.execute("UPDATE inbox SET action='returned' WHERE id=?", (r["id"],))
         counts["returned"] += 1
 
@@ -90,13 +103,6 @@ def undo(con, dry_run: bool = False, progress=print) -> dict:
     progress(f"{verb} {counts['removed']:,} files from the library, returned {counts['returned']:,} to the inbox, "
              f"kept {counts['kept']:,} that are not safe to remove. The old files were not touched.")
     return counts
-
-
-def _copy_back(src: str, dst: str) -> None:
-    import shutil
-    shutil.copy2(src, dst + ".part")
-    os.replace(dst + ".part", dst)
-    os.remove(src)
 
 
 # --- catalog copy ------------------------------------------------------------
