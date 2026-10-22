@@ -18,8 +18,12 @@ After the one-time cleanup it keeps the library tidy:
 ## Requirements
 
 - Python 3.9 or newer. It's already on macOS (run `python3 --version`; if asked, install the Command Line Tools) and on Ubuntu.
-- No other packages are needed. For faster duplicate checks on big libraries you can optionally run `python3 -m pip install xxhash`.
-- AI tagging only: `python3 -m pip install anthropic` and an Anthropic API key (see [AI tagging](#ai-tagging)).
+- No other packages are needed. Two optional extras:
+  - faster duplicate checks on big libraries: `python3 -m pip install ".[fast]"` (the `xxhash` library)
+  - AI tagging: `python3 -m pip install ".[ai]"` (the `anthropic` library) and an Anthropic API key (see [AI tagging](#ai-tagging))
+- For the library drive: APFS on the Mac, ext4 on Ubuntu. Both can make hardlinks; exFAT can't (see [Moving to Ubuntu later](#moving-to-ubuntu-later) before the move).
+
+The full list of what Pettagam must do, how each requirement is tested, and what is still open is in [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md).
 
 ## Install
 
@@ -52,7 +56,7 @@ The **Explore library** tab shows every file in the library, newest first, with 
 
 The panel remembers your folders, shows live progress, and keeps its catalog in `~/.pettagam/` on your internal drive. To stop it, close the Terminal window that opened with it.
 
-**On Ubuntu Server (no screen):** run `launchers/pettagam-panel.sh --host 0.0.0.0 --no-browser`, then open the link it prints from any computer on your network. In this mode the link carries a secret token, so only people with the link can use the panel.
+**On Ubuntu Server (no screen):** the safest way is an SSH tunnel. Run the panel normally on the server (`launchers/pettagam-panel.sh --no-browser`), then on your laptop run `ssh -L 8484:localhost:8484 you@server` and open <http://localhost:8484/>. Everything travels encrypted inside SSH. Alternatively, `--host 0.0.0.0` makes the panel reachable from your network: the link it prints carries a secret token, so only people with the link can use it, but the connection is plain HTTP, so use this only on a home network you trust.
 
 ## Use it from the command line
 
@@ -88,7 +92,7 @@ This confirms three things:
 - Every placed file is identical to its original (same inode for hardlinks; size, date and sampled checksums for copies).
 - Nothing in the old folder has changed since the scan.
 
-It exits with code 0 when everything matches.
+It exits with code 0 when everything matches. Copied files (rather than hardlinked) are checksummed in a random sample of 200; add `--full` to checksum every one.
 
 The manifest at `<library>/_meta/manifest.csv` records every original path and what happened to it.
 
@@ -265,13 +269,30 @@ pettagam relocate --catalog-from /srv/ninaivu/Pettagam/_meta/catalog.db \
 pettagam verify --rescan
 ```
 
-The paths inside the catalog are relative, so nothing else changes: tags, rules, the inbox history and the views all carry over. `relocate` spot-checks that files are where it now expects them. Then set up the background inbox again with `pettagam service on`.
+The paths inside the catalog are relative, so nothing else changes: tags, rules, the inbox history and the views all carry over.
+
+**The drive's format matters.** Ubuntu can't write to APFS (the Mac's format), so a library on an APFS drive has to be copied onto an ext4 drive for Ubuntu. `pettagam doctor` shows the format. Copy with hardlinks kept, so the library still takes no extra space, for example from an Ubuntu machine with both drives attached (APFS read through `apfs-fuse`) or over the network from the Mac:
+
+```
+rsync -aH "/Volumes/N300/Pettagam/" you@server:/srv/ninaivu/Pettagam/
+```
+
+If the old files go too, copy them in the same `rsync` run as the library (their common parent folder), or the hardlinks between them become separate copies. `relocate` spot-checks that files are where it now expects them. Then set up the background inbox again with `pettagam service on`.
+
+## Safety and privacy
+
+- The old files are only ever read. A file already in the library is never replaced. A file is removed from the inbox (or, during undo, from the library) only after its new copy is on the disk and checked.
+- Only one step writes to a library at a time: placing, inbox sorting and undo wait for each other.
+- Nothing leaves your computer unless you set up AI tagging and confirm the file count and cost. Your catalog, settings and logs are in `~/.pettagam/`, which only your user can open.
+- The panel answers only to this computer unless you start it for the network, and library files it shows can't act as the panel even if they contain scripts.
+
+See [SECURITY.md](SECURITY.md) for how to report a problem.
 
 ## Development
 
 ```
-python3 -m pip install pytest
+python3 -m pip install -e ".[dev]"
 python3 -m pytest
 ```
 
-CI runs the tests on macOS and Ubuntu with Python 3.9 and 3.12 for every pull request. Changes are listed in [CHANGELOG.md](CHANGELOG.md). To release, update the version in `pyproject.toml` and `pettagam/__init__.py`, add a CHANGELOG section, and push a tag such as `v0.3.0`: the release workflow tests it, builds the package, and publishes a GitHub release with that CHANGELOG section as its notes.
+Requirements, with the test that checks each one, are in [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md); a change in behaviour updates that file, the tests and [CHANGELOG.md](CHANGELOG.md) together. CI runs the tests on macOS and Ubuntu with Python 3.9, 3.12 and 3.13 (and once with the optional extras) for every pull request, and checks that the built package installs. To release, update the version in `pettagam/__init__.py` (the package reads it from there), add a CHANGELOG section, and push a tag such as `v0.4.0`: the release workflow tests it, builds the package, and publishes a GitHub release with that CHANGELOG section as its notes.
