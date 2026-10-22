@@ -532,12 +532,14 @@ def self_signed(directory: str = None) -> tuple:
                          "or give your own with --tls-cert and --tls-key.")
     private_dir(directory)
     name = socket.gethostname() or "localhost"
-    names = sorted({"localhost", name, name.split(".")[0] + ".local"})
+    # DNS labels are at most 63 characters; some computers (and CI machines) have longer names.
+    names = sorted(n for n in {"localhost", name, name.split(".")[0] + ".local"}
+                   if all(0 < len(part) <= 63 for part in n.split(".")))
     san = ",".join([f"DNS:{n}" for n in names] + ["IP:127.0.0.1"])
     old = os.umask(0o077)  # the key is readable by you only
     try:
         base = [openssl, "req", "-x509", "-newkey", "rsa:2048", "-sha256", "-days", "825", "-nodes",
-                "-keyout", key, "-out", cert, "-subj", f"/CN={name}"]
+                "-keyout", key, "-out", cert, "-subj", "/CN=Pettagam panel"]  # names go in the SAN
         r = subprocess.run(base + ["-addext", f"subjectAltName={san}"], capture_output=True, text=True, timeout=60)
         if r.returncode:  # an older LibreSSL without -addext: the name alone still works with the warning
             r = subprocess.run(base, capture_output=True, text=True, timeout=60)
