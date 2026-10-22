@@ -87,6 +87,7 @@ def main(argv=None) -> int:
 
     v = sub.add_parser("verify", help="check every file made it and matches")
     v.add_argument("--sample", type=int, default=200, help="copies to checksum in full")
+    v.add_argument("--full", action="store_true", help="checksum every copied file, not just a sample")
     v.add_argument("--rescan", action="store_true", help="also look for changes in the source since the scan")
     v.add_argument("--json", help="write full results to this file")
 
@@ -176,7 +177,15 @@ def main(argv=None) -> int:
 
     args = p.parse_args(argv)
     if args.db and os.path.dirname(os.path.abspath(args.db)):
-        os.makedirs(os.path.dirname(os.path.abspath(args.db)), exist_ok=True)
+        folder = os.path.dirname(os.path.abspath(args.db))
+        if folder == os.path.join(os.path.expanduser("~"), ".pettagam"):
+            from .safeio import private_dir
+            private_dir(folder)
+        else:
+            os.makedirs(folder, exist_ok=True)
+    if args.cmd in ("inbox", "fixity") and not sys.stdout.isatty():
+        from .service import rotate_log  # run by the background job, which appends to its log
+        rotate_log()
     if args.cmd == "relocate":
         from .maintenance import relocate
         if not (args.source or args.library or args.catalog_from):
@@ -232,7 +241,7 @@ def _run(con, args) -> int:
         res = apply(con, workers=args.workers, method=args.method)
         return 1 if res["errors"] else 0
     if args.cmd == "verify":
-        res = verify(con, sample=args.sample, rescan=args.rescan)
+        res = verify(con, sample=-1 if args.full else args.sample, rescan=args.rescan)
         for k, items in res["problems"].items():
             for item in items[:10]:
                 print(f"  {k}: {item}")

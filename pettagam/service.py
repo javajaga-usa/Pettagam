@@ -21,6 +21,7 @@ RUNNER = None  # tests swap in a fake so launchctl/systemctl are never really ca
 UNIT = "pettagam-inbox"
 FIXITY_UNIT = "pettagam-fixity"
 FIXITY_MINUTES = 30
+LOG_MAX = 5 * 1024 * 1024  # the background log is started afresh beyond this, keeping one older file
 
 
 def _home(home=None) -> str:
@@ -176,8 +177,9 @@ def install(db: str, inbox: str, library: str, every: int = 300, platform=None, 
         raise SystemExit("Automatic sorting is available on macOS and Linux. Use `pettagam inbox --watch` instead.")
     uninstall(platform=platform, home=home, runner=runner)
     h = _home(home)
-    log = os.path.join(h, ".pettagam", "inbox-service.log")
-    os.makedirs(os.path.dirname(log), exist_ok=True)
+    log = _log_path(home)
+    from .safeio import private_dir
+    private_dir(os.path.dirname(log))
     cmd = command(db, inbox, library, python, notify)
     paths = _paths(platform, home)
     os.makedirs(os.path.dirname(paths[0]), exist_ok=True)
@@ -237,10 +239,26 @@ def status(platform=None, home=None) -> dict:
     return {"installed": installed, "text": text, **state}
 
 
+def _log_path(home=None) -> str:
+    return os.path.join(_home(home), ".pettagam", "inbox-service.log")
+
+
+def rotate_log(home=None, max_bytes: int = LOG_MAX) -> bool:
+    """Keep the background log small: past max_bytes it becomes inbox-service.log.1 (replacing the older
+    one) and a new log starts with the next run. Returns True when it rotated."""
+    log = _log_path(home)
+    try:
+        if os.path.getsize(log) <= max_bytes:
+            return False
+        os.replace(log, log + ".1")
+        return True
+    except OSError:
+        return False
+
+
 def last_log(home=None, lines: int = 20) -> str:
     try:
-        with open(os.path.join(_home(home), ".pettagam", "inbox-service.log"), encoding="utf-8",
-                  errors="replace") as f:
+        with open(_log_path(home), encoding="utf-8", errors="replace") as f:
             return "".join(f.readlines()[-lines:])
     except OSError:
         return ""

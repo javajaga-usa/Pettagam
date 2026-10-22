@@ -10,6 +10,7 @@ from .scan import walk
 
 
 def verify(con, sample: int = 200, rescan: bool = False, progress=print) -> dict:
+    """sample: how many copied files to checksum in full; -1 checks every one (hardlinks need no reading)."""
     source, library = get_meta(con, "source"), get_meta(con, "library")
     problems = {"unplaced": [], "missing": [], "mismatch": [], "changed": [], "deleted": [], "new": []}
 
@@ -49,14 +50,15 @@ def verify(con, sample: int = 200, rescan: bool = False, progress=print) -> dict
                 problems["mismatch"].append(r["dest"])
             else:
                 copies.append((src, dst, r["dest"]))
-    for src, dst, rel in random.sample(copies, min(sample, len(copies))):
+    n = len(copies) if sample < 0 else min(sample, len(copies))
+    for src, dst, rel in random.sample(copies, n):
         try:
             if hash_file(src) != hash_file(dst):
                 problems["mismatch"].append(rel)
         except OSError:
             pass
     progress(f"Integrity: {len(placed):,} placed files checked, {len(problems['missing']):,} missing, "
-             f"{len(problems['mismatch']):,} differ" + (f" (checksummed {min(sample, len(copies)):,} copies)" if copies else ""))
+             f"{len(problems['mismatch']):,} differ" + (f" (checksummed {n:,} of {len(copies):,} copies)" if copies else ""))
 
     # 3. Source drift since the scan.
     if rescan:

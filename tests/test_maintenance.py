@@ -173,7 +173,7 @@ def test_inbox_pass_skips_while_another_runs(placed, tmp_path):
     p = write(str(inbox), "x.txt", b"x")
     os.utime(p, (time.time() - 60, time.time() - 60))
     (lib / "_meta").mkdir(parents=True, exist_ok=True)
-    with open(lib / "_meta" / "inbox.lock", "w") as f:
+    with open(lib / "_meta" / "library.lock", "w") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         assert sort_inbox(con, str(inbox), progress=quiet).get("busy") == 1
     assert sort_inbox(con, str(inbox), progress=quiet)["placed"] == 1

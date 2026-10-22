@@ -1,6 +1,8 @@
 """Point-and-click panel: a small local web page for choosing folders and running each step.
 
-Stdlib only. Binds to 127.0.0.1 by default, so only this computer can open it.
+Stdlib only. Binds to 127.0.0.1 by default, so only this computer can open it. Requests must name this
+computer as the host (which stops other websites reaching it through DNS rebinding), and on the network
+every request needs the secret token from the start-up link.
 """
 from __future__ import annotations
 
@@ -14,7 +16,7 @@ import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlparse, urlsplit
 
 from . import library
 from .apply import apply
@@ -23,6 +25,7 @@ from .hashing import find_duplicates
 from .plan import SPLIT_AT, plan
 from .report import report
 from .rules import default_path, load_rules
+from .safeio import private_dir
 from .scan import scan
 from .verify import verify
 
@@ -30,6 +33,33 @@ HOME = os.path.join(os.path.expanduser("~"), ".pettagam")
 SETTINGS = os.path.join(HOME, "panel.json")
 DEFAULTS = {"source": "", "library": "", "inbox": "", "db": os.path.join(HOME, "pettagam.db"),
             "report": os.path.join(HOME, "report"), "workers": 2, "split_at": SPLIT_AT}
+LOCAL_NAMES = {"localhost", "127.0.0.1", "::1"}
+MAX_BODY = 2 * 1024 * 1024  # the largest request the page sends is a rules file
+# The page itself: only its own scripts and files, and it can't be framed by another site.
+PAGE_CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: blob:; media-src 'self'; frame-src 'self'; frame-ancestors 'none'; "
+            "base-uri 'none'; form-action 'self'")
+
+
+def clean_settings(body: dict, s: dict) -> dict:
+    """Apply settings sent by the page, after checking them. Raises ValueError with a plain message."""
+    out = dict(s)
+    for k in ("source", "library", "inbox"):
+        if k in body:
+            v = body[k]
+            if not isinstance(v, str) or "\x00" in v:
+                raise ValueError(f"{k} must be a folder path")
+            out[k] = os.path.abspath(os.path.expanduser(v)) if v.strip() else ""
+    for k, lo, hi in (("workers", 1, 32), ("split_at", 100, 1_000_000)):
+        if k in body:
+            try:
+                v = int(body[k])
+            except (TypeError, ValueError):
+                raise ValueError(f"{k} must be a whole number") from None
+            if not lo <= v <= hi:
+                raise ValueError(f"{k} must be between {lo:,} and {hi:,}")
+            out[k] = v
+    return out
 
 
 def load_settings() -> dict:
@@ -43,9 +73,10 @@ def load_settings() -> dict:
 
 
 def save_settings(s: dict) -> None:
-    os.makedirs(HOME, exist_ok=True)
-    with open(SETTINGS, "w", encoding="utf-8") as f:
+    private_dir(HOME)
+    with open(SETTINGS + ".tmp", "w", encoding="utf-8") as f:
         json.dump(s, f, indent=2)
+    os.replace(SETTINGS + ".tmp", SETTINGS)
 
 
 class Job:
@@ -286,9 +317,14 @@ class Handler(BaseHTTPRequestHandler):
     token = None  # set when the panel is reachable from the network
 
     def _authorized(self, query: dict) -> bool:
-        """On the network, every request needs the secret from the start-up link (kept in a cookie)."""
+        """On this computer, the request must be addressed to this computer by name. On the network,
+        every request needs the secret from the start-up link (kept in a cookie)."""
         if not self.token:
-            return True
+            try:
+                host = urlsplit("//" + self.headers.get("Host", "")).hostname
+            except ValueError:
+                return False
+            return host in LOCAL_NAMES
         if secrets.compare_digest(query.get("token", ""), self.token):
             return True
         cookies = dict(c.strip().split("=", 1) for c in self.headers.get("Cookie", "").split(";") if "=" in c)
@@ -307,8 +343,15 @@ class Handler(BaseHTTPRequestHandler):
                          else ctype)
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
+        self._safety_headers(PAGE_CSP)
         self.end_headers()
         self.wfile.write(data)
+
+    def _safety_headers(self, csp: str, frame: str = "DENY") -> None:
+        self.send_header("Content-Security-Policy", csp)
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", frame)
+        self.send_header("Referrer-Policy", "no-referrer")
 
     def _send_file(self, path: str):
         """Stream a library file, with byte ranges so videos can be played and scrubbed."""
@@ -336,6 +379,10 @@ class Handler(BaseHTTPRequestHandler):
         if rng:
             self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
         self.send_header("Cache-Control", "private, max-age=3600")
+        # A library file may be a web page or an SVG with scripts in it. Shown on its own, it runs in a
+        # sandbox with no access to the panel. PDFs are left out: browsers won't show them sandboxed.
+        is_pdf = path.lower().endswith(".pdf")
+        self._safety_headers("frame-ancestors 'self'" if is_pdf else "sandbox; frame-ancestors 'self'", "SAMEORIGIN")
         self.end_headers()
         with open(path, "rb") as f:
             f.seek(start)
@@ -406,17 +453,28 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(403, {"error": "forbidden"})
         if not self._authorized({}):
             return self._send(403, {"error": "forbidden"})
-        length = int(self.headers.get("Content-Length") or 0)
+        # Plain web forms can't send JSON, so this also turns away forms posted from other websites.
+        if self.headers.get("Content-Type", "").split(";")[0].strip().lower() != "application/json":
+            return self._send(415, {"error": "send JSON"})
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            return self._send(400, {"error": "bad request"})
+        if length > MAX_BODY or length < 0:
+            return self._send(413, {"error": "request too large"})
         try:
             body = json.loads(self.rfile.read(length) or b"{}")
         except ValueError:
             return self._send(400, {"error": "bad request"})
+        if not isinstance(body, dict):
+            return self._send(400, {"error": "bad request"})
         u = urlparse(self.path)
         s = load_settings()
         if u.path == "/api/settings":
-            for k in ("source", "library", "inbox", "workers", "split_at"):
-                if k in body:
-                    s[k] = body[k]
+            try:
+                s = clean_settings(body, s)
+            except ValueError as e:
+                return self._send(400, {"error": str(e)})
             save_settings(s)
             return self._send(200, {"settings": s})
         if u.path == "/api/rules":
@@ -454,7 +512,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def serve(host: str = "127.0.0.1", port: int = 8484, open_browser: bool = True) -> None:
-    os.makedirs(HOME, exist_ok=True)
+    private_dir(HOME)
     local = host in ("127.0.0.1", "localhost", "::1")
     Handler.token = None if local else secrets.token_urlsafe(16)
     httpd = ThreadingHTTPServer((host, port), Handler)
