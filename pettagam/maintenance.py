@@ -5,7 +5,7 @@ and follow the files when the drive is mounted somewhere else (for example after
 import os
 import sqlite3
 
-from .db import connect, get_meta, set_meta
+from .db import NewerCatalog, connect, get_meta, set_meta
 from .safeio import BUSY, library_lock, move_file
 
 CATALOG_COPY = os.path.join("_meta", "catalog.db")
@@ -145,8 +145,14 @@ def relocate(db_path: str, source: str = None, library: str = None, catalog_from
         finally:
             src.close()
             dst.close()
+        try:
+            con = connect(db_path)
+        except NewerCatalog:
+            os.remove(db_path)  # leave nothing half-made behind
+            raise
         progress(f"Catalog restored from {catalog_from}")
-    con = connect(db_path)
+    else:
+        con = connect(db_path)
     old = {"source": get_meta(con, "source"), "library": get_meta(con, "library")}
     if source:
         set_meta(con, "source", os.path.abspath(source))

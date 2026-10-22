@@ -15,6 +15,7 @@ All notable changes to Pettagam. Versions follow [semantic versioning](https://s
 - `SECURITY.md`.
 
 ### Changed
+- The catalog has a version number. Opening an older catalog keeps a copy of it (`pettagam.db.v0.bak`) and then upgrades it; a catalog from a newer Pettagam is refused unchanged instead of being half-understood (this also protects `relocate` from a newer drive copy). The upgrade adds an index that makes `pettagam duplicates` much faster on big collections.
 - CI lints the code with `ruff` and checks that the shell scripts parse; the code uses Python 3.13 syntax throughout.
 - Copies (placing across drives, inbox, undo, export) are flushed to the disk and checked before they get their name, and an inbox file is removed only after that. Moves and copies never replace an existing file, even one that appears at the last moment.
 - Placing, inbox sorting and undo share one lock per library, so they never run at the same time (the lock file is now `_meta/library.lock`).

@@ -281,6 +281,7 @@ Each story lists the requirements that implement it (section 5 and 6). Acceptanc
 | DS-6 | Only one writer at a time per library (FR-APPLY-5). | `safeio.py` | `test_safety.py::test_apply_and_undo_wait_for_the_library_lock` |
 | DS-7 | The catalog shall survive a crash (SQLite WAL) and be backed up with the library (FR-MOVE-1). An older catalog shall be upgraded in place on first open. | `db.py`, `maintenance.py` | `test_milestone2.py::test_old_catalog_gets_new_columns` |
 | DS-8 | Silent damage to library files shall be detectable (FR-FIX-1..4). | `fixity.py` | `test_library.py::test_fixity_finds_silent_damage_but_not_edits` |
+| DS-9 | The catalog shall carry a layout version (`PRAGMA user_version`). Opening an older catalog shall first save a copy of it (`<catalog>.v<N>.bak`) and then upgrade it in one transaction, step by step. A catalog from a newer Pettagam shall be refused without being changed, including when relocating from the copy that travelled with the drive. | `db.py`, `maintenance.py` | `test_catalog.py::test_new_catalog_gets_the_current_version`, `test_catalog.py::test_old_catalog_is_upgraded_with_a_backup_and_keeps_its_data`, `test_catalog.py::test_catalog_from_a_newer_pettagam_is_refused_untouched`, `test_catalog.py::test_every_version_has_an_upgrade_step` |
 
 ### 6.2 Security
 
@@ -404,6 +405,7 @@ The audit compared the 0.3.0 code, tests and README against the requirements abo
 | G-18 | Python 3.9 had reached its end of life. The owner chose 3.13 as the minimum (2026-10-22). `requires-python = ">=3.13"`, CI tests 3.13 and 3.14, the setup scripts find 3.13 or point to python.org (Mac) or the deadsnakes PPA (Ubuntu 24.04), and Pettagam runs from its own `.venv`. | PLAT-7, MAINT-3 |
 | G-17 | No licence. Chose MIT, the usual licence for a personal tool: anyone may use and change the code if they keep the copyright notice, with no warranty. `LICENSE`, and `license = "MIT"` in `pyproject.toml` so the built package says so. If the repository should stay closed instead, delete `LICENSE` and the two `license` lines. | MAINT-5 |
 | G-20 | CI now runs `ruff check` (pinned version) and parses every shell script. The code was brought up to date for 3.13 on the way (`X \| None` instead of `Optional`, no `from __future__` imports, `zip(strict=True)` where lengths must match). Type checking with `mypy` is left out for now: the code has few annotations, so it would find little. | MAINT-6 |
+| G-19 | The catalog has a layout version (now 2) with numbered upgrade steps; an upgrade keeps a copy of the catalog as it was, and a newer catalog is refused. Version 2 adds an index that makes `duplicates` fast on large collections. | DS-9 |
 
 ### 9.3 Still open
 
@@ -412,7 +414,6 @@ The audit compared the 0.3.0 code, tests and README against the requirements abo
 | G-12 | Performance targets (PERF-1, 2, 4) have never been measured on the N300 Pro. | Time a dry run and placement of a real subset on the Mac and record the numbers here. | No |
 | G-13 | Network mode is plain HTTP: the token crosses the home network unencrypted. | Use the panel over an SSH tunnel (`ssh -L 8484:localhost:8484 server`) instead of `--host 0.0.0.0`, or put it behind a TLS reverse proxy. | No, but note it before using network mode |
 | G-14 | The panel has not been checked for keyboard-only and screen-reader use. | Audit against WCAG 2.2 AA when the panel next changes. | No |
-| G-19 | The catalog has no schema version number; upgrades rely on adding missing columns. | Add `PRAGMA user_version` with the first change that needs more than new columns. | No |
 
 ## 10. Verification and change control
 
