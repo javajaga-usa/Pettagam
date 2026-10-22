@@ -536,9 +536,11 @@ def self_signed(directory: str = None) -> tuple:
     san = ",".join([f"DNS:{n}" for n in names] + ["IP:127.0.0.1"])
     old = os.umask(0o077)  # the key is readable by you only
     try:
-        r = subprocess.run([openssl, "req", "-x509", "-newkey", "rsa:2048", "-sha256", "-days", "825", "-nodes",
-                            "-keyout", key, "-out", cert, "-subj", f"/CN={name}", "-addext", f"subjectAltName={san}"],
-                           capture_output=True, text=True, timeout=60)
+        base = [openssl, "req", "-x509", "-newkey", "rsa:2048", "-sha256", "-days", "825", "-nodes",
+                "-keyout", key, "-out", cert, "-subj", f"/CN={name}"]
+        r = subprocess.run(base + ["-addext", f"subjectAltName={san}"], capture_output=True, text=True, timeout=60)
+        if r.returncode:  # an older LibreSSL without -addext: the name alone still works with the warning
+            r = subprocess.run(base, capture_output=True, text=True, timeout=60)
     finally:
         os.umask(old)
     if r.returncode:
