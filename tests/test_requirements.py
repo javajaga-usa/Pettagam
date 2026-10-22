@@ -95,3 +95,12 @@ def test_python_minimum_is_the_same_everywhere():  # PLAT-7
     for doc in ("README.md", os.path.join("docs", "REQUIREMENTS.md")):
         with open(os.path.join(ROOT, doc), encoding="utf-8") as f:
             assert "3.9 or newer" not in f.read(), doc
+
+
+def test_licence_is_declared():  # MAINT-5
+    import tomllib
+    with open(os.path.join(ROOT, "pyproject.toml"), "rb") as f:
+        project = tomllib.load(f)["project"]
+    assert project["license"] == "MIT" and project["license-files"] == ["LICENSE"]
+    with open(os.path.join(ROOT, "LICENSE"), encoding="utf-8") as f:
+        assert f.readline().strip() == "MIT License"

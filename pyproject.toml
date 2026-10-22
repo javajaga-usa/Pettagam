@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=64"]
+requires = ["setuptools>=77"]  # 77: SPDX `license` and `license-files`
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -10,6 +10,8 @@ readme = "README.md"
 # 3.13 or newer (the owner's choice, 2026-10-22). The core needs nothing outside the standard library.
 requires-python = ">=3.13"
 authors = [{ name = "Jagadeesh" }]
+license = "MIT"
+license-files = ["LICENSE"]
 keywords = ["files", "organize", "photos", "deduplicate", "hardlink", "library", "nas"]
 classifiers = [
     "Development Status :: 4 - Beta",

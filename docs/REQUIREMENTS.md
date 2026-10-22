@@ -336,6 +336,7 @@ Threat model: Pettagam runs as the owner on their own computer. The panel is a w
 | MAINT-2 | Every requirement shall be verified by an automated test where practical, and `tests/test_requirements.py` shall check that the tests this document names exist. | `test_requirements.py::test_every_named_test_exists` |
 | MAINT-3 | CI shall run the tests on macOS and Ubuntu with Python 3.13 (the minimum) and 3.14 for every pull request, and build and install the package. | `.github/workflows/tests.yml` |
 | MAINT-4 | The version shall be defined once (`pettagam/__init__.py`); releases are made by pushing a matching `v*` tag, with notes from `CHANGELOG.md`. | `.github/workflows/release.yml` |
+| MAINT-5 | The code shall carry a licence (MIT) in `LICENSE`, declared in the package metadata. | `test_requirements.py::test_licence_is_declared` |
 
 ## 7. Software and platform requirements
 
@@ -400,6 +401,7 @@ The audit compared the 0.3.0 code, tests and README against the requirements abo
 | Gap | Decision or fix | Requirement |
 | --- | --- | --- |
 | G-18 | Python 3.9 had reached its end of life. The owner chose 3.13 as the minimum (2026-10-22). `requires-python = ">=3.13"`, CI tests 3.13 and 3.14, the setup scripts find 3.13 or point to python.org (Mac) or the deadsnakes PPA (Ubuntu 24.04), and Pettagam runs from its own `.venv`. | PLAT-7, MAINT-3 |
+| G-17 | No licence. Chose MIT, the usual licence for a personal tool: anyone may use and change the code if they keep the copyright notice, with no warranty. `LICENSE`, and `license = "MIT"` in `pyproject.toml` so the built package says so. If the repository should stay closed instead, delete `LICENSE` and the two `license` lines. | MAINT-5 |
 
 ### 9.3 Still open
 
@@ -408,7 +410,6 @@ The audit compared the 0.3.0 code, tests and README against the requirements abo
 | G-12 | Performance targets (PERF-1, 2, 4) have never been measured on the N300 Pro. | Time a dry run and placement of a real subset on the Mac and record the numbers here. | No |
 | G-13 | Network mode is plain HTTP: the token crosses the home network unencrypted. | Use the panel over an SSH tunnel (`ssh -L 8484:localhost:8484 server`) instead of `--host 0.0.0.0`, or put it behind a TLS reverse proxy. | No, but note it before using network mode |
 | G-14 | The panel has not been checked for keyboard-only and screen-reader use. | Audit against WCAG 2.2 AA when the panel next changes. | No |
-| G-17 | No licence file. Without one, nobody else may legally use or change the code. | Choose a licence (MIT is the usual choice for a personal tool), or keep the repository private. | Yes |
 | G-19 | The catalog has no schema version number; upgrades rely on adding missing columns. | Add `PRAGMA user_version` with the first change that needs more than new columns. | No |
 | G-20 | No linting or type checking in CI. | Add `ruff` (and optionally `mypy`) as a CI step. | No |
 
