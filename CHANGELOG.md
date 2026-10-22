@@ -10,6 +10,7 @@ All notable changes to Pettagam. Versions follow [semantic versioning](https://s
 ### Added
 - **Word search uses a full-text index**: searching a million files for a word takes milliseconds instead of about a second. It finds the same files as before (any part of a word of 3 or more letters, ignoring case, now in every language). Existing catalogs build the index once, on first open; that takes a minute or so for a couple of million files. The health check says if your Python's SQLite can't do this (then search still works, more slowly).
 - **HTTPS for the panel on the network** (`pettagam panel --host 0.0.0.0 --tls`): with a certificate Pettagam makes for this computer once (it prints the fingerprint to check), or your own with `--tls-cert`/`--tls-key`. Plain network mode now warns that it isn't encrypted.
+- **Measure speed** button in the panel's health check runs the same timings on your folders.
 - `pettagam bench` measures scanning, reading, hardlink placing and Explore search speed on your drive against the targets in the requirements, without changing anything.
 - An MIT licence (`LICENSE`), declared in the package metadata.
 - **Requirements specification** ([docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)): user stories with acceptance criteria, functional, data-safety, security, privacy, performance and platform requirements, each traced to the code and the test that checks it, plus the audit's findings and open items. `tests/test_requirements.py` fails if the document names a test that doesn't exist.

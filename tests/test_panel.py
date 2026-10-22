@@ -250,3 +250,18 @@ def test_panel_text_colours_are_readable():  # USE-6: WCAG 2.2 AA, 4.5:1 for nor
             for bg in ("bg", "card", "chip", "code", "bar"):
                 assert ratio(v[fg], v[bg]) >= 4.5, (fg, bg, round(ratio(v[fg], v[bg]), 2))
         assert ratio(v["accent-ink"], v["accent"]) >= 4.5
+
+
+def test_speed_check_from_panel(server, monkeypatch):  # FR-BENCH-2
+    base, tmp = server
+    monkeypatch.setattr(panel, "BENCH_SEARCH_ROWS", 2000)
+    src, lib = tmp / "old", tmp / "lib"
+    write(str(src), "a/IMG_1.JPG", jpeg("Apple", "iPhone 12"))
+    lib.mkdir()
+    call(base, "/api/settings", {"source": str(src), "library": str(lib)})
+    call(base, "/api/run", {"action": "bench"})
+    st = wait_job(base)
+    lines = {line["name"]: line for line in st["job"]["result"]["lines"]}
+    assert set(lines) == {"Scan", "Read", "Place", "Search"} and lines["Place"]["ok"] is True
+    assert os.listdir(lib / "_meta") == [] and (src / "a" / "IMG_1.JPG").exists()
+    assert 'id="btn-bench"' in call(base, "/")

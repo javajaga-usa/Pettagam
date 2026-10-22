@@ -145,7 +145,8 @@ dl.info dt { color: var(--muted); } dl.info dd { margin: 0; word-break: break-al
     <h2>Health check</h2>
     <p class="hint">Checks the drives, whether placing can use hardlinks, free space and the optional extras.</p>
     <ul class="checks" id="checks"></ul>
-    <div class="actions" style="margin-top:10px"><button id="btn-doctor">Check again</button></div>
+    <div class="actions" style="margin-top:10px"><button id="btn-doctor">Check again</button>
+      <button id="btn-bench" title="Times scanning, reading, placing and searching on these drives. Changes nothing.">Measure speed</button></div>
   </section>
 
   <section class="card">
@@ -350,6 +351,11 @@ function showResult(job) {
       : `No damage found. ${fmtN(r.recorded)} files fingerprinted for the first time, ${fmtN(r.ok)} unchanged` +
         (r.missing.length ? `, ${fmtN(r.missing.length)} missing (see the log)` : "") + (r.remaining ? `; ${fmtN(r.remaining)} left for next time.` : ".");
     loadDoctor();
+  } else if (job.name === "bench") {
+    const lines = r.lines || [], slow = lines.filter((l) => l.ok === false);
+    el.classList.add(slow.length ? "warn" : "ok");
+    el.textContent = lines.map((l) => `${l.name}: ${l.got} (target ${l.target})${l.ok === false ? " — slow" : ""}`).join(". ") +
+      ". Measured right after plugging in the drive is the honest number; later runs are helped by the cache.";
   } else if (job.name === "dryrun") {
     el.classList.add("ok");
     el.textContent = "Dry run finished. Review the folders above, then place the files.";
@@ -379,6 +385,7 @@ $("btn-apply").onclick = () => run("apply");
 $("btn-verify").onclick = () => run("verify");
 $("btn-inbox").onclick = () => run("inbox");
 $("btn-fixity").onclick = () => run("fixity");
+$("btn-bench").onclick = () => run("bench");
 $("btn-undo").onclick = () => {
   if (confirm("Take the placed files back out of the library? Files sorted from the inbox go back to the inbox. A library file is only removed when its old file still has the same content, so nothing is lost.")) run("undo");
 };

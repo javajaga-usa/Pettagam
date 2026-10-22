@@ -252,6 +252,7 @@ Each story lists the requirements that implement it (section 5 and 6). Acceptanc
 | FR-MOVE-2 | `relocate` shall restore a catalog from that copy and point it at new source and library roots, then spot-check files. | `maintenance.py` | `test_maintenance.py::test_catalog_copy_travels_and_relocate_restores_it` |
 | FR-MOVE-3 | Paths inside the catalog shall be relative to the source and library roots. | `db.py` | `test_maintenance.py::test_catalog_copy_travels_and_relocate_restores_it` |
 | FR-BENCH-1 | `pettagam bench [SOURCE] [--library LIB]` shall time the scan (files per second), sequential reading (MB/s), hardlink placing (files per second) and Explore search over a made-up catalog of a million files, and show each against its target (PERF-1, 2, 4). It shall only read the old files, make its test files only in a temporary folder under `<library>/_meta/` and remove it, and record the numbers in the catalog (`bench_last`). | `bench.py`, `cli.py` | `test_bench.py::test_bench_reads_old_files_only_and_cleans_up`, `test_bench.py::test_bench_reports_a_drive_without_hardlinks`, `test_bench.py::test_bench_command_records_the_numbers` |
+| FR-BENCH-2 | The panel's health check card shall have a Measure speed button that runs the same timings on the chosen folders (with a smaller made-up catalog so it finishes quickly) and shows each against its target. | `panel.py`, `panel.html` | `test_panel.py::test_speed_check_from_panel` |
 
 ### 5.11 Panel and install
 
