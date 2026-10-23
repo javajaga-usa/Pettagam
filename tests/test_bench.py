@@ -24,7 +24,8 @@ def test_bench_reads_old_files_only_and_cleans_up(tmp_path):
     assert os.listdir(lib / "_meta") == []  # its test links are gone
     assert 20 <= res["scan"]["files"] <= 30 and res["scan"]["rate"] > 0
     assert res["read"]["bytes"] > 0 and res["place"]["files"] == 20
-    assert set(res["search"]["each"]) == {"(newest first)", "beach 2019", "IMG_12345"}
+    assert set(res["search"]["each"]) == {"(newest first)", "beach 2019", "IMG_12345", "by name", "largest first",
+                                          "oldest in a folder", "folders at the top", "folders in a folder"}
     names = [v[0] for v in bench.verdicts(res)]
     assert names == ["Scan", "Read", "Place", "Search"]
 

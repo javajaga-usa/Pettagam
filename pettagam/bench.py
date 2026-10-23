@@ -94,7 +94,7 @@ def bench_place(library: str, files: int = 2000) -> dict:
 
 def bench_search(rows: int = 1_000_000, searches=("", "beach 2019", "IMG_12345")) -> dict:
     """Build a made-up catalog of `rows` placed files in memory and time Explore over it: the opening view
-    (newest first), a common word and a rare one. The slowest counts."""
+    (newest first), a common word and a rare one, the other orders, and browsing folders. The slowest counts."""
     from . import library
     from .db import SCHEMA, ensure_search
     con = sqlite3.connect(":memory:")
@@ -114,6 +114,14 @@ def bench_search(rows: int = 1_000_000, searches=("", "beach 2019", "IMG_12345")
         t0 = time.perf_counter()
         library.search(con, words)
         each[words or "(newest first)"] = time.perf_counter() - t0
+    for label, run in (("by name", lambda: library.search(con, sort="name")),
+                       ("largest first", lambda: library.search(con, sort="largest")),
+                       ("oldest in a folder", lambda: library.search(con, folder="images", sort="oldest")),
+                       ("folders at the top", lambda: library.folders(con)),
+                       ("folders in a folder", lambda: library.folders(con, "images"))):
+        t0 = time.perf_counter()
+        run()
+        each[label] = time.perf_counter() - t0
     con.close()
     return {"rows": rows, "seconds": max(each.values()), "each": each}
 

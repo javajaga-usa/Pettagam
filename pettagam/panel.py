@@ -5,6 +5,7 @@ computer as the host (which stops other websites reaching it through DNS rebindi
 every request needs the secret token from the start-up link.
 """
 
+import contextlib
 import hashlib
 import json
 import mimetypes
@@ -15,6 +16,7 @@ import socket
 import ssl
 import string
 import subprocess
+import sys
 import threading
 import time
 import webbrowser
@@ -205,16 +207,84 @@ def _steps(action: str, s: dict):
     return with_backup
 
 
+MAX_SELECTED = 100_000  # files changed by one bulk tag edit
+
+
 def explore(s: dict, q: str = "", category: str = "", tag: str = "", year: str = "",
-            offset: int = 0, limit: int = 120, day: str = "") -> dict:
+            offset: int = 0, limit: int = 120, day: str = "", folder: str = "", sort: str = "newest") -> dict:
     """Search the finished library: by words in the name, folder, tags or description."""
     if not os.path.exists(s["db"]):
+        if sort not in library.SORTS:
+            raise ValueError(f"sort must be one of {', '.join(library.SORTS)}")
+        library.clean_folder(folder)
         return {"items": [], "total": 0}
-    return library.search(connect(s["db"]), q, category, tag, year, offset, limit, day)
+    return library.search(connect(s["db"]), q, category, tag, year, offset, limit, day, folder, sort)
+
+
+def search_args(q: dict) -> dict:
+    """The search in a query string or request body, as keyword arguments for library.search."""
+    return {k: str(q.get(k, "") or "") for k in ("q", "category", "tag", "year", "day", "folder")} | \
+        {"sort": str(q.get("sort") or "newest")}
+
+
+def folders(s: dict, folder: str) -> dict:
+    if not os.path.exists(s["db"]):
+        return {"folder": library.clean_folder(folder), "folders": [], "files_here": 0, "bytes_here": 0,
+                "files": 0, "bytes": 0}
+    return library.folders(connect(s["db"]), folder)
+
+
+def bulk_tags(s: dict, body: dict) -> tuple:
+    """Add or remove tags on many files at once: the ones chosen in Explore (ITEMS), or every file a search
+    finds (MATCH). Returns (status, reply)."""
+    add, remove, items, match = body.get("add", []), body.get("remove", []), body.get("items"), body.get("match")
+    words = lambda v: isinstance(v, list) and all(isinstance(t, str) for t in v)
+    if not (words(add) and words(remove)) or not (add or remove) or (items is None) == (match is None):
+        return 400, {"error": "bad request"}
+    if items is not None and not (isinstance(items, list) and len(items) <= MAX_SELECTED and all(
+            isinstance(i, dict) and i.get("src") in library.IN_LIBRARY and type(i.get("id")) is int for i in items)):
+        return 400, {"error": "bad request"}
+    if match is not None and not isinstance(match, dict):
+        return 400, {"error": "bad request"}
+    if not os.path.exists(s["db"]):
+        return 404, {"error": "not found"}
+    con = connect(s["db"])
+    if match is not None:
+        try:
+            total = library.search(con, **search_args(match), limit=0)["total"]
+            if total > MAX_SELECTED:
+                return 400, {"error": f"That is {total:,} files; narrow the search to {MAX_SELECTED:,} or fewer."}
+            found = library.search(con, **search_args(match), limit=max(total, 1))["items"]
+        except ValueError as e:
+            return 400, {"error": str(e)}
+        pairs = [(r["src"], r["id"]) for r in found]
+    else:
+        pairs = [(i["src"], i["id"]) for i in items]
+    return 200, {"changed": library.edit_tags(con, pairs, add=add, remove=remove), "files": len(pairs)}
+
+
+REVEAL = subprocess.run  # replaced in tests
+
+
+def reveal(s: dict, rel: str) -> tuple:
+    """Show a library file in Finder (macOS) or open its folder in the file manager (Linux)."""
+    p = library_file(s, rel)
+    if not p:
+        return 404, {"error": "not found"}
+    if sys.platform == "darwin":
+        cmd = ["open", "-R", p]
+    elif shutil.which("xdg-open"):
+        cmd = ["xdg-open", os.path.dirname(p)]
+    else:
+        return 400, {"error": "No file manager to open on this computer."}
+    REVEAL(cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return 200, {"shown": p}
 
 
 def edit_tags(s: dict, body: dict) -> tuple:
     """Tags and description typed in Explore's file details. Returns (status, reply)."""
+    if "items" in body or "match" in body:
+        return bulk_tags(s, body)
     tags, desc = body.get("tags"), body.get("description")
     if body.get("src") not in library.IN_LIBRARY or not isinstance(body.get("id"), int) \
             or not (isinstance(tags, list) and all(isinstance(t, str) for t in tags)) \
@@ -286,6 +356,77 @@ def library_file(s: dict, rel: str):
     root = os.path.realpath(lib)
     p = os.path.realpath(os.path.join(root, rel))
     return p if p.startswith(root + os.sep) and os.path.isfile(p) else None
+
+
+# Small pictures for Explore's grid, so a page of photos doesn't read every full-size file off the drive. macOS
+# makes them with sips (which also turns HEIC and TIFF into JPEG, which every browser can show); elsewhere the
+# file itself is sent. They are kept in ~/.pettagam/thumbs, oldest dropped past THUMB_CACHE bytes.
+THUMB_SIZES = (320, 1600)
+THUMB_CACHE = 1 << 30
+THUMB_SLOTS = threading.BoundedSemaphore(2)  # a spinning drive reads one or two files at a time well
+_thumbs_made = [0]
+
+
+def _sips(src: str, out: str, size: int) -> bool:
+    r = subprocess.run(["sips", "-s", "format", "jpeg", "-s", "formatOptions", "75", "-Z", str(size), src,
+                        "--out", out], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60, check=False)
+    return r.returncode == 0 and os.path.getsize(out) > 0
+
+
+MAKE_THUMB = _sips if sys.platform == "darwin" and shutil.which("sips") else None
+
+
+def thumbnail(s: dict, rel: str, size: int = THUMB_SIZES[0]) -> str | None:
+    """A small JPEG of a library picture (made once, then kept), or the file itself when no small one can be
+    made. None when REL is not a library file."""
+    p = library_file(s, rel)
+    if not p or size not in THUMB_SIZES:
+        return None
+    if not MAKE_THUMB:
+        return p
+    st = os.stat(p)
+    key = hashlib.sha256(f"{p}\0{st.st_size}\0{st.st_mtime_ns}\0{size}".encode()).hexdigest()[:40]
+    folder = os.path.join(HOME, "thumbs", key[:2])
+    out = os.path.join(folder, key + ".jpg")
+    if os.path.exists(out):
+        return out
+    private_dir(os.path.join(HOME, "thumbs"))
+    os.makedirs(folder, exist_ok=True)
+    tmp = f"{out}.{threading.get_ident()}.tmp.jpg"
+    with THUMB_SLOTS:
+        try:
+            ok = MAKE_THUMB(p, tmp, size)
+        except (OSError, subprocess.SubprocessError):
+            ok = False
+        if not ok:
+            with contextlib.suppress(OSError):
+                os.remove(tmp)
+            return p
+        os.replace(tmp, out)
+    _thumbs_made[0] += 1
+    if _thumbs_made[0] % 500 == 0:
+        prune_thumbs()
+    return out
+
+
+def prune_thumbs(limit: int = None) -> int:
+    """Drop the oldest small pictures until the cache is under LIMIT bytes. Returns how many went."""
+    limit = THUMB_CACHE if limit is None else limit
+    found = []
+    for root, _, names in os.walk(os.path.join(HOME, "thumbs")):
+        for n in names:
+            with contextlib.suppress(OSError):
+                st = os.stat(os.path.join(root, n))
+                found.append((st.st_mtime, st.st_size, os.path.join(root, n)))
+    total, gone = sum(f[1] for f in found), 0
+    for _, size, path in sorted(found):
+        if total <= limit:
+            break
+        with contextlib.suppress(OSError):
+            os.remove(path)
+            total -= size
+            gone += 1
+    return gone
 
 
 def summary(s: dict) -> dict:
@@ -444,16 +585,22 @@ class Handler(BaseHTTPRequestHandler):
             html = resources.files("pettagam").joinpath("panel.html").read_text(encoding="utf-8")
             return self._send(200, html, "text/html", cookie=True)
         if u.path == "/api/state":
-            return self._send(200, {"settings": s, "job": JOB.snapshot(), "summary": summary(s)})
+            return self._send(200, {"settings": s, "job": JOB.snapshot(), "summary": summary(s),
+                                    "local": not self.token})
         if u.path == "/api/browse":
             return self._send(200, browse(q.get("path", "")))
         if u.path == "/api/plan":
             return self._send(200, plan_rows(s, q.get("q", ""), q.get("folder", "")))
         if u.path == "/api/explore":
             try:
-                return self._send(200, explore(s, q.get("q", ""), q.get("category", ""), q.get("tag", ""),
-                                               q.get("year", ""), int(q.get("offset", "0") or 0),
-                                               day=q.get("day", "")))
+                a = search_args(q)
+                return self._send(200, explore(s, a.pop("q"), a.pop("category"), a.pop("tag"), a.pop("year"),
+                                               int(q.get("offset", "0") or 0), **a))
+            except ValueError as e:
+                return self._send(400, {"error": str(e)})
+        if u.path == "/api/folders":
+            try:
+                return self._send(200, folders(s, q.get("folder", "")))
             except ValueError as e:
                 return self._send(400, {"error": str(e)})
         if u.path == "/api/copies":
@@ -483,6 +630,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, estimate(connect(s["db"])))
         if u.path == "/api/file":
             p = library_file(s, q.get("path", ""))
+            if not p:
+                return self._send(404, {"error": "not found"})
+            return self._send_file(p)
+        if u.path == "/api/thumb":
+            p = thumbnail(s, q.get("path", ""), int(q["size"]) if q.get("size", "").isdigit() else THUMB_SIZES[0])
             if not p:
                 return self._send(404, {"error": "not found"})
             return self._send_file(p)
@@ -540,6 +692,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, service.status())
         if u.path == "/api/tags":
             return self._send(*edit_tags(s, body))
+        if u.path == "/api/reveal":
+            if self.token:  # the file manager would open on the computer running the panel, not the viewer's
+                return self._send(403, {"error": "Only from the computer running the panel."})
+            return self._send(*reveal(s, str(body.get("path", ""))))
         if u.path == "/api/run":
             action = body.get("action")
             if action not in ("dryrun", "apply", "verify", "inbox", "views", "tag", "undo", "fixity", "bench"):

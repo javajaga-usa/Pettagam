@@ -289,3 +289,98 @@ def test_speed_check_from_panel(server, monkeypatch):  # FR-BENCH-2
     assert set(lines) == {"Scan", "Read", "Place", "Search"} and lines["Place"]["ok"] is True
     assert os.listdir(lib / "_meta") == [] and (src / "a" / "IMG_1.JPG").exists()
     assert 'id="btn-bench"' in call(base, "/")
+
+
+def _placed_library(base, tmp):
+    src = tmp / "old"
+    for i in range(3):
+        write(str(src), f"Trip/IMG_000{i}.JPG", jpeg("Apple", "iPhone 12", pad=100 * (i + 1)))
+    write(str(src), "docs/Invoice_1.pdf", b"%PDF-1.7 hello")
+    write(str(src), "docs/notes.txt", b"milk\nrice\n")
+    call(base, "/api/settings", {"source": str(src), "library": str(tmp / "lib")})
+    call(base, "/api/run", {"action": "dryrun"})
+    wait_job(base)
+    call(base, "/api/run", {"action": "apply"})
+    wait_job(base)
+
+
+def test_explore_folders_sorting_and_bulk_tags(server):  # FR-FIND-7, FR-FIND-8, FR-TAG-7
+    base, tmp = server
+    assert call(base, "/api/folders")["folders"] == []  # no catalog yet
+    _placed_library(base, tmp)
+    top = call(base, "/api/folders")
+    assert {f["name"]: f["files"] for f in top["folders"]} == {"documents": 2, "images": 3}
+    assert call(base, "/api/folders?folder=images")["folders"][0]["path"] == "images/photos"
+    with pytest.raises(urllib.error.HTTPError) as e:
+        call(base, "/api/folders?folder=../..")
+    assert e.value.code == 400
+    big = call(base, "/api/explore?folder=images&sort=largest")
+    assert big["total"] == 3 and [it["size"] for it in big["items"]] == sorted((it["size"] for it in big["items"]), reverse=True)
+    assert call(base, "/api/explore?folder=documents&sort=name")["items"][0]["name"] == "Invoice_1.pdf"
+    for bad in ("sort=shuffle", "folder=../x"):
+        with pytest.raises(urllib.error.HTTPError) as e:
+            call(base, "/api/explore?" + bad)
+        assert e.value.code == 400
+
+    # Chosen files get tags added and taken away in one go.
+    items = [{"src": it["src"], "id": it["id"]} for it in big["items"][:2]]
+    assert call(base, "/api/tags", {"items": items, "add": ["Goa", "beach"]}) == {"changed": 2, "files": 2}
+    assert call(base, "/api/explore?tag=goa")["total"] == 2
+    assert call(base, "/api/tags", {"items": items, "add": ["goa"]})["changed"] == 0  # already there
+    assert call(base, "/api/tags", {"items": items[:1], "remove": ["goa"]})["changed"] == 1
+    assert call(base, "/api/explore?tag=goa")["total"] == 1 and call(base, "/api/explore?tag=beach")["total"] == 2
+    # Or every file a search finds, not only the ones on screen.
+    d = call(base, "/api/tags", {"match": {"folder": "documents"}, "add": ["paperwork"]})
+    assert d == {"changed": 2, "files": 2}
+    assert call(base, "/api/explore?tag=paperwork&folder=documents")["total"] == 2
+    for bad in ({"items": items}, {"items": items, "add": "x"}, {"items": items, "match": {}, "add": ["x"]},
+                {"items": [{"src": "sqlite_master", "id": 1}], "add": ["x"]}, {"items": [{"src": "files", "id": "1"}], "add": ["x"]},
+                {"match": {"sort": "shuffle"}, "add": ["x"]}, {"match": "all", "add": ["x"]}):
+        with pytest.raises(urllib.error.HTTPError) as e:
+            call(base, "/api/tags", bad)
+        assert e.value.code == 400, bad
+
+
+def test_explore_thumbnails_and_show_in_folder(server, monkeypatch):  # FR-PANEL-7
+    base, tmp = server
+    _placed_library(base, tmp)
+    rel = call(base, "/api/explore?folder=images")["items"][0]["dest"]
+    original = (tmp / "lib" / rel).read_bytes()
+
+    monkeypatch.setattr(panel, "MAKE_THUMB", None)  # no way to make small pictures: the file itself
+    raw = lambda path: urllib.request.urlopen(base + path).read()
+    assert raw("/api/thumb?path=" + rel) == original
+    made = []
+
+    def fake(src, out, size):
+        made.append(size)
+        with open(out, "wb") as f:
+            f.write(b"small")
+        return True
+    monkeypatch.setattr(panel, "MAKE_THUMB", fake)
+    assert call(base, "/api/thumb?path=" + rel) == "small"
+    assert call(base, "/api/thumb?path=" + rel) == "small" and made == [320]  # made once, then kept
+    assert call(base, f"/api/thumb?path={rel}&size=1600") == "small" and made == [320, 1600]
+    for bad in (f"path={rel}&size=99", "path=../old/docs/notes.txt", "path=/etc/passwd"):
+        with pytest.raises(urllib.error.HTTPError) as e:
+            call(base, "/api/thumb?" + bad)
+        assert e.value.code == 404
+    monkeypatch.setattr(panel, "MAKE_THUMB", lambda src, out, size: False)  # can't: the file itself
+    other = rel.replace("0000", "0001") if "0000" in rel else rel.replace("0002", "0001")
+    assert raw("/api/thumb?path=" + other) == (tmp / "lib" / other).read_bytes()
+    assert panel.prune_thumbs(0) == 2 and panel.prune_thumbs(0) == 0
+
+    shown = []
+    monkeypatch.setattr(panel, "REVEAL", lambda cmd, **kw: shown.append(cmd))
+    monkeypatch.setattr(panel.shutil, "which", lambda name: "/usr/bin/" + name)
+    assert call(base, "/api/state")["local"] is True
+    d = call(base, "/api/reveal", {"path": rel})
+    assert d["shown"] == str((tmp / "lib" / rel).resolve()) and shown and shown[0][-1] in (d["shown"], os.path.dirname(d["shown"]))
+    with pytest.raises(urllib.error.HTTPError) as e:
+        call(base, "/api/reveal", {"path": "../old/docs/notes.txt"})
+    assert e.value.code == 404
+    monkeypatch.setattr(panel.Handler, "token", "secret123")  # from another computer it would open here
+    with pytest.raises(urllib.error.HTTPError) as e:
+        call(base, "/api/reveal?token=secret123", {"path": rel}, headers={"Cookie": "pettagam=secret123"})
+    assert e.value.code == 403
+    assert len(shown) == 1
