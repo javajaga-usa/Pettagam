@@ -32,10 +32,60 @@ IN_LIBRARY = {"files": "action='place' AND status='done'", "inbox": "action='pla
 MAX_TAGS = 20  # by hand; AI tagging gives at most 8
 
 
+# How Explore and `find` can order the files: the SQL for each table, and the same order in Python for merging
+# the two tables' lists. Each order is one an index gives without sorting (db.py), read forwards or backwards,
+# which is why ties go by folder and name backwards for oldest and smallest. SQLite's lower() only folds A-Z,
+# and sorts a missing value (NULL) first, so the Python keys do the same.
+_ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
+
+
+class _Backwards(str):
+    __slots__ = ()
+
+    def __lt__(self, other):
+        return str.__gt__(self, other)
+
+
+def _when(r):
+    return r["taken"] if r["taken"] is not None else r["mtime"]
+
+
+def _num(v, missing):
+    return missing if v is None else v
+
+
+SORTS = {
+    "newest": (NEWEST, lambda r: (-_num(_when(r), -math.inf), r["dest"])),
+    "oldest": ("ORDER BY COALESCE(taken, mtime), dest DESC", lambda r: (_num(_when(r), -math.inf), _Backwards(r["dest"]))),
+    "name": ("ORDER BY lower(name), dest", lambda r: ((r["name"] or "").translate(_ASCII_LOWER), r["dest"])),
+    "largest": ("ORDER BY size DESC, dest", lambda r: (-_num(r["size"], -math.inf), r["dest"])),
+    "smallest": ("ORDER BY size, dest DESC", lambda r: (_num(r["size"], -math.inf), _Backwards(r["dest"]))),
+}
+
+
+def clean_folder(folder: str) -> str:
+    """A folder inside the library as "images/photos" (no slashes at the ends). Raises ValueError for a
+    folder that would leave the library."""
+    parts = [p for p in str(folder or "").replace("\\", "/").split("/") if p not in ("", ".")]
+    if ".." in parts:
+        raise ValueError("folder must be inside the library")
+    return "/".join(parts)
+
+
+def _under(folder: str) -> tuple:
+    """WHERE clause and arguments for every file anywhere under FOLDER, as a range the dest index can use
+    ("0" is the character after "/")."""
+    return "dest >= ? AND dest < ?", [folder + "/", folder + "0"]
+
+
 def search(con, q: str = "", category: str = "", tag: str = "", year: str = "",
-           offset: int = 0, limit: int = 120, day: str = "") -> dict:
+           offset: int = 0, limit: int = 120, day: str = "", folder: str = "", sort: str = "newest") -> dict:
     """Search by words in the name, folder, tags, description or camera, plus optional filters.
-    DAY ("MM-DD") keeps the files from that day of the year, in any year: "on this day"."""
+    DAY ("MM-DD") keeps the files from that day of the year, in any year: "on this day".
+    FOLDER keeps the files anywhere under that library folder. SORT is one of SORTS (newest first by default)."""
+    if sort not in SORTS:
+        raise ValueError(f"sort must be one of {', '.join(SORTS)}")
+    folder = clean_folder(folder)
     where, args = ["1=1"], []
     indexed = has_search(con)
     fts = []
@@ -59,6 +109,11 @@ def search(con, q: str = "", category: str = "", tag: str = "", year: str = "",
             raise ValueError("day must look like 10-22 (month-day)")
         where.append(f"{DAY} = ?")
         args.append(day)
+    if folder:
+        cond, a = _under(folder)
+        where.append(cond)
+        args += a
+    order, key = SORTS[sort]
     # Each table on its own, so its index gives the newest files without sorting the whole library;
     # then the two short lists are merged.
     total, parts = 0, []
@@ -72,14 +127,64 @@ def search(con, q: str = "", category: str = "", tag: str = "", year: str = "",
         total += n
         if not n:
             continue
-        if n < 3 * (offset + limit):  # few matches: reading the table and sorting them beats walking the index
-            sql = sql.replace(f"FROM {table} WHERE", f"FROM {table} NOT INDEXED WHERE")
-        parts.append([dict(r) for r in con.execute(f"{sql} {NEWEST} LIMIT ?", (*a, offset + limit))])
-    def newest_first(r):  # as NEWEST orders them: a file without a date comes last
-        when = r["taken"] if r["taken"] is not None else r["mtime"]
-        return (-when if when is not None else math.inf, r["dest"])
-    newest = heapq.merge(*parts, key=newest_first)
-    return {"items": list(itertools.islice(newest, offset, offset + limit)), "total": total}
+        if n < 3 * (offset + limit):  # few matches: reading them all and sorting beats walking the index
+            hint = f"INDEXED BY {table}_dest" if folder else "NOT INDEXED"
+            sql = sql.replace(f"FROM {table} WHERE", f"FROM {table} {hint} WHERE")
+        parts.append([dict(r) for r in con.execute(f"{sql} {order} LIMIT ?", (*a, offset + limit))])
+    merged = heapq.merge(*parts, key=key)
+    return {"items": list(itertools.islice(merged, offset, offset + limit)), "total": total}
+
+
+def folders(con, folder: str = "") -> dict:
+    """What is directly inside a library folder: its subfolders, each with how many files and bytes are
+    anywhere under it, and how many files sit in the folder itself. Only library files count, so _meta and
+    views/ never show. The root is "" (the whole library).
+
+    It hops through the folder index from one subfolder to the next instead of reading every file name,
+    and counts each subfolder from the index alone, so a million-file library answers in well under a second."""
+    folder = clean_folder(folder)
+    prefix = folder + "/" if folder else ""
+    end = folder + "0" if folder else None
+    subs, here, here_bytes = {}, 0, 0
+    for table, cond in IN_LIBRARY.items():
+        def first_after(lo, table=table, cond=cond):
+            sql = f"SELECT dest FROM {table} INDEXED BY {table}_dest WHERE {cond} AND dest >= ?"
+            a = [lo]
+            if end is not None:
+                sql += " AND dest < ?"
+                a.append(end)
+            r = con.execute(sql + " ORDER BY dest LIMIT 1", a).fetchone()
+            return r[0] if r else None
+
+        def count(lo, hi, table=table, cond=cond):
+            sql = f"SELECT COUNT(*), COALESCE(SUM(size), 0) FROM {table} INDEXED BY {table}_dest WHERE {cond} AND dest >= ?"
+            a = [lo]
+            if hi is not None:
+                sql += " AND dest < ?"
+                a.append(hi)
+            return con.execute(sql, a).fetchone()
+
+        total, total_bytes = count(prefix, end)
+        if not total:
+            continue
+        in_subs = in_subs_bytes = 0
+        dest = first_after(prefix)
+        while dest is not None:
+            name, slash, _ = dest[len(prefix):].partition("/")
+            if not slash:  # a file in this folder; hop to the next name after it
+                dest = first_after(dest + "\0")
+                continue
+            sub = prefix + name
+            n, size = count(sub + "/", sub + "0")
+            f, b = subs.get(name, (0, 0))
+            subs[name] = (f + n, b + size)
+            in_subs, in_subs_bytes = in_subs + n, in_subs_bytes + size
+            dest = first_after(sub + "0")
+        here, here_bytes = here + total - in_subs, here_bytes + total_bytes - in_subs_bytes
+    items = [{"name": k, "path": prefix + k, "files": f, "bytes": b}
+             for k, (f, b) in sorted(subs.items(), key=lambda kv: kv[0].translate(_ASCII_LOWER))]
+    return {"folder": folder, "folders": items, "files_here": here, "bytes_here": here_bytes,
+            "files": here + sum(i["files"] for i in items), "bytes": here_bytes + sum(i["bytes"] for i in items)}
 
 
 def find_item(con, path: str) -> tuple | None:
@@ -230,11 +335,11 @@ def write_duplicates_csv(con, path: str) -> int:
 
 
 def export(con, dest: str, q: str = "", category: str = "", tag: str = "", year: str = "", flat: bool = False,
-           dry_run: bool = False, progress=print) -> dict:
+           dry_run: bool = False, progress=print, folder: str = "") -> dict:
     """Copy the library files that match a search into DEST. The library is only read; nothing is overwritten."""
     library = get_meta(con, "library")
-    total = search(con, q, category, tag, year, limit=0)["total"]
-    items = search(con, q, category, tag, year, limit=max(total, 1))["items"]
+    total = search(con, q, category, tag, year, limit=0, folder=folder)["total"]
+    items = search(con, q, category, tag, year, limit=max(total, 1), folder=folder)["items"]
     res = {"copied": 0, "same": 0, "renamed": 0, "errors": 0, "bytes": 0}
     for it in items:
         src = os.path.join(library, it["dest"])

@@ -69,11 +69,16 @@ CREATE TABLE IF NOT EXISTS inbox (
 );
 CREATE INDEX IF NOT EXISTS inbox_size ON inbox(size);
 CREATE INDEX IF NOT EXISTS inbox_recent ON inbox(COALESCE(taken, mtime) DESC, dest) WHERE action='placed';
+CREATE INDEX IF NOT EXISTS files_dest ON files(dest, size) WHERE action='place' AND status='done';
+CREATE INDEX IF NOT EXISTS files_largest ON files(size DESC, dest) WHERE action='place' AND status='done';
+CREATE INDEX IF NOT EXISTS files_name ON files(lower(name), dest) WHERE action='place' AND status='done';
+CREATE INDEX IF NOT EXISTS inbox_dest ON inbox(dest, size) WHERE action='placed';
+CREATE INDEX IF NOT EXISTS inbox_largest ON inbox(size DESC, dest) WHERE action='placed';
 """
 
 # The catalog's layout version, kept in SQLite's PRAGMA user_version. A catalog without one (0) is from
 # before versioning. Each step below takes a catalog from the version before it to its own number.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def _v1(con):
@@ -93,7 +98,12 @@ def _v2(con):
     # The inbox table itself may not exist yet in a very old catalog; SCHEMA adds it with its indexes.
 
 
-MIGRATIONS = {1: _v1, 2: _v2}
+def _v3(con):
+    """Library files by folder, by size and by name, so Explore can browse folders and sort a big library
+    without reading all of it. SCHEMA, run after the steps, creates them (and the inbox ones)."""
+
+
+MIGRATIONS = {1: _v1, 2: _v2, 3: _v3}
 
 
 class NewerCatalog(SystemExit):

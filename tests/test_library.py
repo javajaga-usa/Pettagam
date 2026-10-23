@@ -227,3 +227,59 @@ def test_copies_of_a_library_file(placed):  # FR-FIND-6
     assert copies_of(con, "files", keep, limit=1) == {"copies": got["copies"][:1], "total": 2}
     pdf = con.execute("SELECT id FROM files WHERE name='report.pdf'").fetchone()[0]
     assert copies_of(con, "files", pdf)["total"] == 0 and copies_of(con, "inbox", keep)["total"] == 0
+
+
+def test_folders_and_sorting(placed, capsys):  # FR-FIND-7, FR-FIND-8
+    from pettagam.library import clean_folder, folders
+    con, src, lib, dbp = placed
+    top = folders(con)
+    assert [(f["name"], f["files"]) for f in top["folders"]] == [("documents", 2), ("images", 1)]
+    assert top["files"] == 3 and top["files_here"] == 0 and top["bytes"] == sum(f["bytes"] for f in top["folders"])
+    docs = folders(con, "/documents/")
+    assert docs["folder"] == "documents" and {f["path"] for f in docs["folders"]} == {
+        "documents/general", "documents/reports"}
+    assert folders(con, "documents/reports")["files_here"] == 1
+    assert folders(con, "nothing")["files"] == 0
+    for bad in ("../x", "documents/../../etc"):
+        with pytest.raises(ValueError):
+            clean_folder(bad)
+
+    assert search(con, folder="documents")["total"] == 2
+    assert search(con, folder="documents/rep")["total"] == 0  # a whole folder name, not a prefix of one
+    assert search(con, "report", folder="images")["total"] == 0
+    names = lambda s: [it["name"] for it in search(con, sort=s)["items"]]
+    assert names("name") == ["IMG_0001.JPG", "notes.txt", "report.pdf"]
+    assert names("largest") == ["report.pdf", "IMG_0001.JPG", "notes.txt"]
+    assert names("smallest") == list(reversed(names("largest")))
+    assert names("oldest") == list(reversed(names("newest")))
+    # Paging through a sorted, filtered list gives every file once.
+    pages = [search(con, sort="largest", offset=i, limit=1)["items"][0]["name"] for i in range(3)]
+    assert pages == names("largest")
+    with pytest.raises(ValueError):
+        search(con, sort="random")
+
+    db = ["--db", str(dbp)]
+    assert cli.main(db + ["folders"]) == 0
+    out = capsys.readouterr().out
+    assert "documents/" in out and "images/" in out
+    assert cli.main(db + ["folders", "documents", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["files"] == 2
+    assert cli.main(db + ["find", "--folder", "documents", "--sort", "smallest"]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[0].endswith("notes.txt") and out[1].endswith("report.pdf")
+    with pytest.raises(SystemExit):
+        cli.main(db + ["find", "--folder", "../x"])
+
+
+def test_folders_include_inbox_files(placed, tmp_path):  # FR-FIND-7
+    from pettagam.library import folders
+    con, src, lib, dbp = placed
+    con.execute("INSERT INTO inbox (at, original, dest, action, size, mtime) VALUES "
+                "(1, '/in/a.pdf', 'documents/reports/a.pdf', 'placed', 10, 1), "
+                "(1, '/in/b.pdf', 'documents/b.pdf', 'placed', 20, 1), "
+                "(1, '/in/c.pdf', 'documents/c.pdf', 'duplicate', 30, 1)")
+    con.commit()
+    d = folders(con, "documents")
+    assert d["files_here"] == 1 and d["bytes_here"] == 20
+    assert {f["name"]: f["files"] for f in d["folders"]}["reports"] == 2
+    assert search(con, folder="documents/reports", sort="name")["total"] == 2

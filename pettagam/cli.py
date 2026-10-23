@@ -17,6 +17,7 @@
   pettagam move-plan --to DIR       the steps and commands to move the library to another computer
   pettagam relocate                 follow the files after the drive is mounted somewhere else
   pettagam find WORDS [--tag T]     search the library by name, folder, tags, camera, type or year
+  pettagam folders [FOLDER]         list the library's folders with how many files each holds
   pettagam stats                    what is in the library: by type, year, camera and tag
   pettagam duplicates [--csv F]     list the identical copies found in the old files
   pettagam export DEST WORDS        copy the files that match a search to another folder
@@ -182,8 +183,14 @@ def main(argv=None) -> int:
     fd.add_argument("--year")
     fd.add_argument("--day", metavar="MM-DD", help="taken on this day of the year, in any year, e.g. 12-25")
     fd.add_argument("--on-this-day", action="store_true", help="taken on today's date in any year")
+    fd.add_argument("--folder", help="only files under this library folder, e.g. images/photos")
+    fd.add_argument("--sort", choices=("newest", "oldest", "name", "largest", "smallest"), default="newest")
     fd.add_argument("--limit", type=int, default=50)
     fd.add_argument("--json", action="store_true", help="print JSON instead of paths")
+
+    fo = sub.add_parser("folders", help="list the library's folders and how many files each holds")
+    fo.add_argument("folder", nargs="?", default="", help="a library folder, e.g. images (default: the top)")
+    fo.add_argument("--json", action="store_true")
 
     st = sub.add_parser("stats", help="what is in the library")
     st.add_argument("--json", action="store_true")
@@ -198,6 +205,7 @@ def main(argv=None) -> int:
     ex.add_argument("--type")
     ex.add_argument("--tag")
     ex.add_argument("--year")
+    ex.add_argument("--folder", help="only files under this library folder")
     ex.add_argument("--flat", action="store_true", help="put every file directly in DEST instead of keeping folders")
     ex.add_argument("--dry-run", action="store_true")
 
@@ -468,9 +476,9 @@ def _run(con, args) -> int:
         day = time.strftime("%m-%d") if args.on_this_day else args.day or ""
         try:
             res = search(con, " ".join(args.words), args.type or "", args.tag or "", args.year or "",
-                         limit=args.limit, day=day)
+                         limit=args.limit, day=day, folder=args.folder or "", sort=args.sort)
         except ValueError as e:
-            raise SystemExit(f"--day: {e}") from None
+            raise SystemExit(f"Can't search: {e}") from None
         lib = get_meta(con, "library") or ""
         if args.json:
             print(json.dumps(res, indent=2, default=str))
@@ -481,6 +489,21 @@ def _run(con, args) -> int:
         more = f" (showing {len(res['items'])}; use --limit)" if res["total"] > len(res["items"]) else ""
         print(f"{res['total']:,} found{more}", file=sys.stderr)
         return 0 if res["total"] else 1
+    if args.cmd == "folders":
+        from .library import _gb, folders
+        try:
+            res = folders(con, args.folder)
+        except ValueError as e:
+            raise SystemExit(str(e)) from None
+        if args.json:
+            print(json.dumps(res, indent=2))
+            return 0
+        print(f"{res['folder'] or 'Library'}: {res['files']:,} files, {_gb(res['bytes'])}")
+        for f in res["folders"]:
+            print(f"  {f['name'] + '/':<32} {f['files']:>9,} files  {_gb(f['bytes']):>12}")
+        if res["files_here"] and res["folders"]:
+            print(f"  {'(files in this folder)':<32} {res['files_here']:>9,} files  {_gb(res['bytes_here']):>12}")
+        return 0 if res["files"] else 1
     if args.cmd == "stats":
         from .library import print_stats, stats
         res = stats(con)
@@ -510,10 +533,13 @@ def _run(con, args) -> int:
         return 0
     if args.cmd == "export":
         from .library import export
-        if not (args.words or args.type or args.tag or args.year):
+        if not (args.words or args.type or args.tag or args.year or args.folder):
             raise SystemExit("Say what to export, e.g. pettagam export ~/Desktop/beach --tag beach")
-        res = export(con, args.dest, " ".join(args.words), args.type or "", args.tag or "", args.year or "",
-                     flat=args.flat, dry_run=args.dry_run)
+        try:
+            res = export(con, args.dest, " ".join(args.words), args.type or "", args.tag or "", args.year or "",
+                         flat=args.flat, dry_run=args.dry_run, folder=args.folder or "")
+        except ValueError as e:
+            raise SystemExit(f"--folder: {e}") from None
         return 1 if res["errors"] else 0
     if args.cmd == "fixity":
         from .fixity import check
