@@ -119,6 +119,40 @@ dl.info dt { color: var(--muted); } dl.info dd { margin: 0; word-break: break-al
 form.edit { display: grid; gap: 8px; padding: 0 16px 6px; font-size: 14px; }
 form.edit label { display: grid; gap: 3px; color: var(--muted); }
 form.edit input { font: inherit; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
+.seg { display: inline-flex; }
+.seg button { border-radius: 0; } .seg button:first-child { border-radius: 8px 0 0 8px; } .seg button:last-child { border-radius: 0 8px 8px 0; margin-left: -1px; }
+.crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin: 2px 0 8px; font-size: 14px; }
+.crumbs button { padding: 3px 8px; border: 0; background: none; color: var(--accent); }
+.crumbs button[aria-current] { color: var(--ink); font-weight: 600; cursor: default; }
+.crumbs .sep { color: var(--muted); }
+.folders { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.folders button { font-size: 13.5px; padding: 5px 10px; display: inline-flex; gap: 6px; align-items: baseline; }
+.folders button span { color: var(--muted); font-size: 12px; }
+.folders button::before { content: ""; width: 12px; height: 9px; border: 1.5px solid var(--muted); border-radius: 2px; align-self: center; }
+.countrow { display: flex; gap: 10px; align-items: baseline; justify-content: space-between; }
+.countrow button { padding: 4px 10px; font-size: 13px; }
+.tile { position: relative; }
+.tile .pick { position: absolute; top: 6px; left: 6px; z-index: 1; background: var(--card); border-radius: 6px; padding: 2px 4px; display: flex;
+  opacity: .85; }
+.tile .pick input { width: 18px; height: 18px; margin: 0; cursor: pointer; }
+.tile.sel { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.scroll-x { overflow-x: auto; }
+table.list td { vertical-align: middle; }
+table.list tr.sel td { background: var(--chip); }
+table.list .link { all: unset; cursor: pointer; color: var(--ink); word-break: break-all; }
+table.list .link.dir { color: var(--muted); font-size: 13px; }
+table.list .link:hover { color: var(--accent); text-decoration: underline; }
+table.list .link:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.selbar { position: sticky; bottom: 12px; z-index: 5; background: var(--card); border: 1px solid var(--accent); border-radius: 12px;
+  padding: 10px 14px; display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; box-shadow: 0 6px 24px rgba(0,0,0,.18); }
+.selbar form { display: flex; gap: 6px; }
+.selbar input { font: inherit; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); width: 150px; }
+.preview pre { margin: 0; padding: 14px 16px; max-height: 60vh; overflow: auto; width: 100%; font: 12.5px/1.5 ui-monospace, Menlo, monospace;
+  white-space: pre-wrap; word-break: break-word; align-self: start; }
+.preview audio { width: 92%; margin: 30px 0; }
+.dlg-foot { flex-wrap: wrap; align-items: center; }
+kbd { font: 12px ui-monospace, Menlo, monospace; background: var(--code); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+.keys { margin: 12px 0 0; font-size: 13px; }
 @media (max-width: 640px) {
   nav.tabs { padding: 0 16px; }
   header, main { padding-left: 16px; padding-right: 16px; }
@@ -224,16 +258,36 @@ form.edit input { font: inherit; padding: 6px 8px; border-radius: 8px; border: 1
   <section class="card">
     <p class="hint" id="ex-stats" style="margin-top:0"></p>
     <div class="tools">
-      <input id="ex-q" type="search" aria-label="Search the library" placeholder="Search names, folders, tags and descriptions, for example beach 2019">
+      <input id="ex-q" type="search" aria-label="Search the library" aria-keyshortcuts="/" placeholder="Search names, folders, tags and descriptions, for example beach 2019">
       <select id="ex-cat" aria-label="Kind of file"><option value="">All kinds</option></select>
       <select id="ex-year" aria-label="Year"><option value="">Any year</option></select>
+      <select id="ex-sort" aria-label="Order">
+        <option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="name">Name, A to Z</option>
+        <option value="largest">Largest first</option><option value="smallest">Smallest first</option>
+      </select>
       <button type="button" id="ex-day" aria-pressed="false" title="Files from today's date in earlier years">On this day</button>
+      <span class="seg" role="group" aria-label="Show as"><button type="button" id="ex-as-grid" aria-pressed="true">Grid</button><button type="button" id="ex-as-list" aria-pressed="false">List</button></span>
     </div>
+    <nav class="crumbs" id="ex-crumbs" aria-label="Folder"></nav>
+    <div class="folders" id="ex-folders" role="group" aria-label="Folders inside this one"></div>
     <div class="tagcloud" id="ex-tags" role="group" aria-label="Tags"></div>
-    <p class="hint" id="ex-count" role="status" aria-live="polite"></p>
-    <div class="grid" id="ex-grid"></div>
+    <div class="countrow"><p class="hint" id="ex-count" role="status" aria-live="polite"></p><button type="button" id="ex-selall" hidden>Select all shown</button></div>
+    <div class="grid" id="ex-grid" role="list" aria-label="Files"></div>
+    <div class="scroll-x" id="ex-listbox" hidden>
+      <table class="list"><thead><tr><th><span class="sr-only">Selected</span></th><th>Name</th><th>Folder</th><th>Date</th><th class="n">Size</th><th>Tags</th></tr></thead><tbody id="ex-rows"></tbody></table>
+    </div>
     <div class="actions" style="margin-top:14px"><button id="ex-more" hidden>Show more</button></div>
+    <p class="hint keys">Keys: <kbd>/</kbd> search, arrow keys move between files, <kbd>Enter</kbd> opens one, <kbd>x</kbd> selects it.
+      In a file's details, <kbd>←</kbd> and <kbd>→</kbd> show the previous and next file.</p>
   </section>
+  <div class="selbar" id="ex-selbar" role="region" aria-label="Selected files" hidden>
+    <b id="sel-count" role="status" aria-live="polite"></b>
+    <button type="button" id="sel-every" hidden></button>
+    <form id="sel-add"><input id="sel-add-tags" aria-label="Tags to add, separated by commas" placeholder="Tags to add" autocomplete="off"><button type="submit">Add tags</button></form>
+    <form id="sel-rm"><input id="sel-rm-tags" aria-label="Tags to remove, separated by commas" placeholder="Tags to remove" autocomplete="off"><button type="submit">Remove tags</button></form>
+    <button type="button" id="sel-clear">Clear selection</button>
+    <span class="hint" id="sel-msg" role="status" aria-live="polite"></span>
+  </div>
 </main>
 
 <dialog id="detail" aria-labelledby="dt-title">
@@ -245,7 +299,12 @@ form.edit input { font: inherit; padding: 6px 8px; border-radius: 8px; border: 1
     <label>Description<input id="dt-desc" autocomplete="off" maxlength="300"></label>
     <div class="actions"><button type="submit">Save tags</button><span class="hint" id="dt-saved" role="status" aria-live="polite"></span></div>
   </form>
-  <div class="dlg-foot"><a id="dt-open" class="button" target="_blank" rel="noopener">Open</a><button id="dt-close" class="primary">Close</button></div>
+  <div class="dlg-foot">
+    <button type="button" id="dt-prev" aria-keyshortcuts="ArrowLeft">‹ Previous</button><span class="hint" id="dt-pos"></span><button type="button" id="dt-next" aria-keyshortcuts="ArrowRight">Next ›</button>
+    <span style="flex:1"></span>
+    <button type="button" id="dt-folder">Show its folder</button><button type="button" id="dt-reveal" hidden>Show in Finder</button>
+    <a id="dt-open" class="button" target="_blank" rel="noopener">Open</a><button id="dt-close" class="primary">Close</button>
+  </div>
 </dialog>
 
 <dialog id="picker" aria-labelledby="pick-title">
@@ -519,11 +578,18 @@ document.querySelectorAll("[data-pick]").forEach((b) => b.onclick = () => {
 });
 
 // --- Explore library ---------------------------------------------------
-const IMG = /\.(jpe?g|png|gif|webp|avif|heic|bmp|svg)$/i, VID = /\.(mp4|m4v|mov|webm)$/i;
+const IMG = /\.(jpe?g|png|gif|webp|avif|heic|heif|bmp|svg|tiff?)$/i, VID = /\.(mp4|m4v|mov|webm)$/i;
+const AUD = /\.(mp3|m4a|aac|wav|ogg|oga|opus|flac)$/i, TXT = /\.(txt|md|markdown|csv|tsv|log|json|xml|ya?ml|ini|conf|srt|vtt)$/i;
+const NEEDS_THUMB = /\.(heic|heif|tiff?)$/i;  // browsers other than Safari can't show these; the panel makes a JPEG
 let exOffset = 0, exTimer, facetsLoaded = false;
 const fileUrl = (p) => `/api/file?path=${encodeURIComponent(p)}`;
+const thumbUrl = (p, size) => `/api/thumb?path=${encodeURIComponent(p)}` + (size ? `&size=${size}` : "");
 const dateOf = (r) => new Date(1000 * (r.taken || r.mtime));
 const tagsOf = (r) => (r.tags || "").split(",").filter(Boolean);
+const dirOf = (p) => p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "";
+const keyOf = (r) => `${r.src}:${r.id}`;
+const typing = (el) => el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable);
+const pref = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
 
 function showTab(name) {
   document.querySelectorAll("[data-tab]").forEach((b) => {
@@ -532,8 +598,8 @@ function showTab(name) {
   });
   $("tab-organize").hidden = name !== "organize";
   $("tab-explore").hidden = name !== "explore";
-  if (name === "explore") { loadFacets(); loadExplore(true); loadStats(); }
-  try { localStorage.setItem("pettagam-tab", name); } catch (e) {}
+  if (name === "explore") { loadFacets(); loadFolders(); loadExplore(true); loadStats(); }
+  pref("pettagam-tab", name);
 }
 document.querySelectorAll("[data-tab]").forEach((b) => b.onclick = () => showTab(b.dataset.tab));
 document.querySelector("[role=tablist]").addEventListener("keydown", (e) => {
@@ -561,59 +627,263 @@ async function loadFacets() {
   if (facetsLoaded) return;
   const f = await api("/api/facets");
   facetsLoaded = true;
+  const cat = $("ex-cat").value, year = $("ex-year").value;
   $("ex-cat").innerHTML = `<option value="">All kinds</option>` + f.categories.map(([c, n]) => `<option value="${esc(c)}">${esc(c)} (${fmtN(n)})</option>`).join("");
   $("ex-year").innerHTML = `<option value="">Any year</option>` + f.years.filter(Boolean).map((y) => `<option>${esc(y)}</option>`).join("");
+  $("ex-cat").value = cat; $("ex-year").value = year;
   $("ex-tags").innerHTML = f.tags.slice(0, 40).map(([t, n]) => `<button type="button" class="chip" data-tag="${esc(t)}" aria-pressed="${t === exTag}" aria-label="${esc(t)}, ${fmtN(n)} files">${esc(t)} · ${fmtN(n)}</button>`).join("");
 }
 
-let exTag = "", exItems = [], dtItem = null, exDay = "";
+// What Explore shows. It is kept in the address (#explore?...), so reloading, Back and bookmarks work.
+let exTag = "", exItems = [], dtIndex = -1, exDay = "", exFolder = "", exSeq = 0, exLoading = false, exTotal = 0;
+let exView = pref("pettagam-view") === "list" ? "list" : "grid";
+$("ex-sort").value = ["newest", "oldest", "name", "largest", "smallest"].includes(pref("pettagam-sort")) ? pref("pettagam-sort") : "newest";
 const today = () => { const t = new Date(); return `${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`; };
-async function loadExplore(reset) {
-  if (reset) { exOffset = 0; exItems = []; }
-  const qs = new URLSearchParams({ q: $("ex-q").value, category: $("ex-cat").value, year: $("ex-year").value, tag: exTag, offset: exOffset, day: exDay });
-  const d = await api(`/api/explore?${qs}`);
-  const html = d.items.map((r) => {
-    const i = exItems.push(r) - 1;
-    const thumb = IMG.test(r.dest) ? `<img loading="lazy" src="${fileUrl(r.dest)}" alt="">` : `<span class="ext">${esc((r.dest.split(".").pop() || "file").slice(0, 5))}</span>`;
-    return `<div class="tile"><button type="button" class="open" data-item="${i}"><div class="thumb">${thumb}</div><div class="meta"><b title="${esc(r.dest)}">${esc(r.name)}</b>` +
-      `<span class="hint">${dateOf(r).toLocaleDateString()} · ${fmtB(r.size)}</span></div></button>` +
-      `<div class="meta chips">${tagsOf(r).slice(0, 4).map((t) => `<button type="button" class="chip" data-tag="${esc(t)}">${esc(t)}</button>`).join("")}</div></div>`;
-  }).join("");
-  if (reset) $("ex-grid").innerHTML = html; else $("ex-grid").insertAdjacentHTML("beforeend", html);
-  exOffset += d.items.length;
-  const onDay = exDay ? ` from ${new Date().toLocaleDateString(undefined, { day: "numeric", month: "long" })} in any year` : "";
-  $("ex-count").textContent = d.total ? `${fmtN(d.total)} files` + (exTag ? ` tagged “${exTag}”` : "") + onDay + (exTag ? " · click the tag again to clear" : "")
-    : exDay ? `Nothing${onDay} yet.` : "No files match. Place files first, or try other words.";
-  $("ex-more").hidden = exOffset >= d.total;
+const searchNow = () => ({ q: $("ex-q").value, category: $("ex-cat").value, year: $("ex-year").value, tag: exTag, day: exDay, folder: exFolder, sort: $("ex-sort").value });
+
+function writeHash(push) {
+  const p = Object.fromEntries(Object.entries(searchNow()).filter(([k, v]) => v && !(k === "sort" && v === "newest")));
+  const hash = "#explore" + (Object.keys(p).length ? "?" + new URLSearchParams(p) : "");
+  if (location.hash !== hash) history[push ? "pushState" : "replaceState"](null, "", hash);
 }
-$("ex-q").oninput = () => { clearTimeout(exTimer); exTimer = setTimeout(() => loadExplore(true), 250); };
-$("ex-cat").onchange = $("ex-year").onchange = () => loadExplore(true);
+function readHash() {
+  if (!location.hash.startsWith("#explore")) return false;
+  const p = new URLSearchParams(location.hash.split("?")[1] || "");
+  $("ex-q").value = p.get("q") || ""; exTag = p.get("tag") || ""; exDay = p.get("day") || ""; exFolder = p.get("folder") || "";
+  $("ex-cat").value = p.get("category") || ""; $("ex-year").value = p.get("year") || "";
+  if (p.get("year") && $("ex-year").value !== p.get("year")) $("ex-year").insertAdjacentHTML("beforeend", `<option selected>${esc(p.get("year"))}</option>`);
+  if (p.get("category") && $("ex-cat").value !== p.get("category")) $("ex-cat").insertAdjacentHTML("beforeend", `<option selected value="${esc(p.get("category"))}">${esc(p.get("category"))}</option>`);
+  if (p.get("sort")) $("ex-sort").value = p.get("sort");
+  $("ex-day").setAttribute("aria-pressed", String(!!exDay));
+  return true;
+}
+window.addEventListener("popstate", () => { if (readHash()) { facetsLoaded = false; showTab("explore"); } });
+
+// --- folders
+async function loadFolders() {
+  let d;
+  try { d = await api(`/api/folders?${new URLSearchParams({ folder: exFolder })}`); }
+  catch (e) { if (exFolder) { exFolder = ""; writeHash(false); return loadFolders(); } return; }
+  const parts = d.folder ? d.folder.split("/") : [];
+  const crumb = (label, path, last) => `<button type="button" data-folder="${esc(path)}"${last ? ' aria-current="location"' : ""}>${esc(label)}</button>`;
+  $("ex-crumbs").innerHTML = crumb("Library", "", !parts.length) + parts.map((p, i) =>
+    `<span class="sep" aria-hidden="true">/</span>` + crumb(p, parts.slice(0, i + 1).join("/"), i === parts.length - 1)).join("") +
+    (d.files ? `<span class="hint" style="margin:0 0 0 8px">${fmtN(d.files)} files, ${fmtB(d.bytes)}</span>` : "");
+  $("ex-folders").innerHTML = d.folders.map((f) => `<button type="button" data-folder="${esc(f.path)}" aria-label="${esc(f.name)}, ${fmtN(f.files)} files">${esc(f.name)} <span>${fmtN(f.files)}</span></button>`).join("");
+  $("ex-folders").hidden = !d.folders.length;
+}
+function goFolder(path) {
+  exFolder = path; writeHash(true); loadFolders(); loadExplore(true);
+}
+
+// --- the files
+function tileHtml(r, i) {
+  const pic = IMG.test(r.dest);
+  const thumb = pic ? `<img loading="lazy" src="${thumbUrl(r.dest)}" alt="" data-ext="${esc(r.dest.split(".").pop())}">` : `<span class="ext">${esc((r.dest.split(".").pop() || "file").slice(0, 5))}</span>`;
+  const on = sel.has(keyOf(r)) || selEvery;
+  return `<div class="tile${on ? " sel" : ""}" role="listitem" data-k="${esc(keyOf(r))}"><label class="pick"><input type="checkbox" data-sel="${i}"${on ? " checked" : ""} aria-label="Select ${esc(r.name)}"></label>` +
+    `<button type="button" class="open" data-item="${i}"><div class="thumb">${thumb}</div><div class="meta"><b title="${esc(r.dest)}">${esc(r.name)}</b>` +
+    `<span class="hint">${dateOf(r).toLocaleDateString()} · ${fmtB(r.size)}</span></div></button>` +
+    `<div class="meta chips">${tagsOf(r).slice(0, 4).map((t) => `<button type="button" class="chip" data-tag="${esc(t)}">${esc(t)}</button>`).join("")}</div></div>`;
+}
+function rowHtml(r, i) {
+  const on = sel.has(keyOf(r)) || selEvery, dir = dirOf(r.dest);
+  return `<tr data-k="${esc(keyOf(r))}"${on ? ' class="sel"' : ""}><td><input type="checkbox" data-sel="${i}"${on ? " checked" : ""} aria-label="Select ${esc(r.name)}"></td>` +
+    `<td><button type="button" class="link open" data-item="${i}">${esc(r.name)}</button></td>` +
+    `<td><button type="button" class="link dir" data-folder="${esc(dir)}" title="Show this folder">${esc(dir) || "(top)"}</button></td>` +
+    `<td style="white-space:nowrap">${dateOf(r).toLocaleDateString()}</td><td class="n">${fmtB(r.size)}</td>` +
+    `<td><div class="chips" style="margin:0">${tagsOf(r).map((t) => `<button type="button" class="chip" data-tag="${esc(t)}">${esc(t)}</button>`).join("")}</div></td></tr>`;
+}
+async function loadExplore(reset) {
+  if (!reset && exLoading) return;
+  const seq = ++exSeq;
+  exLoading = true;
+  const qs = new URLSearchParams({ ...searchNow(), offset: reset ? 0 : exOffset });
+  let d;
+  try { d = await api(`/api/explore?${qs}`); }
+  catch (e) { if (seq === exSeq) { exLoading = false; $("ex-count").textContent = `Can't search: ${e.message}`; } return; }
+  if (seq !== exSeq) return;  // a newer search has started; its answer will be shown instead
+  exLoading = false;
+  if (reset) { exOffset = 0; exItems = []; if (selEvery) { selEvery = false; } }
+  const first = exItems.length;
+  exItems.push(...d.items);
+  exTotal = d.total;
+  const grid = d.items.map((r, j) => tileHtml(r, first + j)).join(""), rows = d.items.map((r, j) => rowHtml(r, first + j)).join("");
+  if (reset) { $("ex-grid").innerHTML = grid; $("ex-rows").innerHTML = rows; }
+  else { $("ex-grid").insertAdjacentHTML("beforeend", grid); $("ex-rows").insertAdjacentHTML("beforeend", rows); }
+  exOffset += d.items.length;
+  const onDay = exDay ? ` from ${new Date(2000, +exDay.slice(0, 2) - 1, +exDay.slice(3)).toLocaleDateString(undefined, { day: "numeric", month: "long" })} in any year` : "";
+  const where = exFolder ? ` in ${exFolder}` : "";
+  $("ex-count").textContent = d.total ? `${fmtN(d.total)} files` + where + (exTag ? ` tagged “${exTag}”` : "") + onDay + (exTag ? " · click the tag again to clear" : "")
+    : exDay ? `Nothing${onDay}${where} yet.` : exFolder ? `Nothing in ${exFolder} matches.` : "No files match. Place files first, or try other words.";
+  $("ex-more").hidden = exOffset >= d.total;
+  $("ex-selall").hidden = !d.total;
+  showSelection();
+}
+function setView(v) {
+  exView = v; pref("pettagam-view", v);
+  $("ex-grid").hidden = v !== "grid"; $("ex-listbox").hidden = v !== "list";
+  $("ex-as-grid").setAttribute("aria-pressed", String(v === "grid")); $("ex-as-list").setAttribute("aria-pressed", String(v === "list"));
+}
+setView(exView);
+$("ex-as-grid").onclick = () => setView("grid");
+$("ex-as-list").onclick = () => setView("list");
+const searchChanged = () => { writeHash(false); loadExplore(true); };
+$("ex-q").oninput = () => { clearTimeout(exTimer); exTimer = setTimeout(searchChanged, 250); };
+$("ex-cat").onchange = $("ex-year").onchange = searchChanged;
+$("ex-sort").onchange = () => { pref("pettagam-sort", $("ex-sort").value); searchChanged(); };
 $("ex-more").onclick = () => loadExplore(false);
-$("ex-day").onclick = () => { exDay = exDay ? "" : today(); $("ex-day").setAttribute("aria-pressed", String(!!exDay)); loadExplore(true); };
+$("ex-day").onclick = () => { exDay = exDay ? "" : today(); $("ex-day").setAttribute("aria-pressed", String(!!exDay)); searchChanged(); };
+// Keep loading as the end of the list scrolls into view; the button stays for keyboards.
+if ("IntersectionObserver" in window) new IntersectionObserver((es) => {
+  if (es.some((e) => e.isIntersecting) && !$("ex-more").hidden && !$("tab-explore").hidden) loadExplore(false);
+}, { rootMargin: "600px" }).observe($("ex-more"));
+// A picture the browser can't show (HEIC in Chrome, a damaged file) falls back to its extension.
+document.addEventListener("error", (e) => {
+  const img = e.target;
+  if (img.tagName === "IMG" && img.closest(".thumb")) img.replaceWith(Object.assign(document.createElement("span"), { className: "ext", textContent: (img.dataset.ext || "file").slice(0, 5) }));
+  else if (img.tagName === "IMG" && img.closest("#dt-preview")) img.outerHTML = `<p class="hint" style="padding:30px">This browser can't show this picture. Use Open.</p>`;
+}, true);
+
 document.addEventListener("click", (e) => {
   const chip = e.target.closest("[data-tag]");
   if (chip) { e.stopPropagation(); exTag = exTag === chip.dataset.tag ? "" : chip.dataset.tag;
     document.querySelectorAll("#ex-tags [data-tag]").forEach((c) => c.setAttribute("aria-pressed", String(c.dataset.tag === exTag)));
-    if ($("detail").open) $("detail").close(); showTab("explore"); return; }
+    if ($("detail").open) $("detail").close(); writeHash(false); showTab("explore"); return; }
+  const folder = e.target.closest("[data-folder]");
+  if (folder && !folder.hasAttribute("aria-current")) { if ($("detail").open) $("detail").close(); goFolder(folder.dataset.folder); return; }
   const tile = e.target.closest("[data-item]");
-  if (tile) openDetail(exItems[+tile.dataset.item]);
+  if (tile) openDetail(+tile.dataset.item);
 }, true);
 
-function openDetail(r) {
-  const url = fileUrl(r.dest);
-  $("dt-preview").innerHTML = IMG.test(r.dest) ? `<img src="${url}" alt="${esc(r.name)}">` : VID.test(r.dest) ? `<video src="${url}" controls preload="metadata"></video>`
-    : /\.pdf$/i.test(r.dest) ? `<iframe src="${url}" title="Preview of ${esc(r.name)}"></iframe>` : `<p class="hint" style="padding:30px">No preview for this kind of file. Use Open.</p>`;
+// --- choosing files, and tagging them all at once
+const sel = new Map();  // "src:id" -> {src, id}
+let selEvery = false, lastPicked = -1;  // selEvery: every file the search finds, not only those shown
+function pick(i, on) {
+  const r = exItems[i], k = keyOf(r);
+  if (on) sel.set(k, { src: r.src, id: r.id }); else sel.delete(k);
+}
+function showSelection() {
+  const n = selEvery ? exTotal : sel.size;
+  $("ex-selbar").hidden = !n;
+  $("sel-count").textContent = selEvery ? `All ${fmtN(n)} matching files selected` : `${fmtN(n)} selected`;
+  const every = !selEvery && sel.size && exTotal > exItems.length && exItems.every((r) => sel.has(keyOf(r)));
+  $("sel-every").hidden = !every;
+  $("sel-every").textContent = `Select all ${fmtN(exTotal)} matching files`;
+  document.querySelectorAll("[data-k]").forEach((el) => {
+    const on = selEvery || sel.has(el.dataset.k);
+    el.classList.toggle("sel", on);
+    const box = el.querySelector("[data-sel]");
+    if (box) box.checked = on;
+  });
+}
+document.addEventListener("change", (e) => {
+  const box = e.target.closest("[data-sel]");
+  if (!box) return;
+  const i = +box.dataset.sel;
+  if (selEvery) { selEvery = false; exItems.forEach((_, j) => pick(j, true)); }
+  if (shiftPick && lastPicked >= 0) { for (let j = Math.min(i, lastPicked); j <= Math.max(i, lastPicked); j++) pick(j, box.checked); }
+  else pick(i, box.checked);
+  lastPicked = i;
+  showSelection();
+});
+// Shift-click picks a run of files. The change event doesn't say whether Shift was down, so remember it here.
+let shiftPick = false;
+document.addEventListener("click", (e) => { if (e.target.closest("[data-sel]")) shiftPick = e.shiftKey; }, true);
+document.addEventListener("keydown", () => { shiftPick = false; }, true);
+$("ex-selall").onclick = () => { exItems.forEach((_, j) => pick(j, true)); showSelection(); };
+$("sel-every").onclick = () => { selEvery = true; showSelection(); };
+$("sel-clear").onclick = () => { sel.clear(); selEvery = false; lastPicked = -1; $("sel-msg").textContent = ""; showSelection(); };
+async function bulkTags(field, how) {
+  const words = $(field).value.split(",").map((t) => t.trim()).filter(Boolean);
+  if (!words.length) { $(field).focus(); return; }
+  const body = { [how]: words, ...(selEvery ? { match: searchNow() } : { items: [...sel.values()] }) };
+  $("sel-msg").textContent = "Saving…";
+  try {
+    const d = await api("/api/tags", body);
+    $("sel-msg").textContent = `${how === "add" ? "Added to" : "Removed from"} ${fmtN(d.changed)} of ${fmtN(d.files)} files. Rebuild views to update the by-tag folders.`;
+    $(field).value = ""; facetsLoaded = false; loadFacets(); loadExplore(true);
+  } catch (err) { $("sel-msg").textContent = `Not saved: ${err.message}`; }
+}
+$("sel-add").onsubmit = (e) => { e.preventDefault(); bulkTags("sel-add-tags", "add"); };
+$("sel-rm").onsubmit = (e) => { e.preventDefault(); bulkTags("sel-rm-tags", "remove"); };
+
+// --- keys: arrows move between files, x selects, / searches
+document.addEventListener("keydown", (e) => {
+  if ($("tab-explore").hidden || $("detail").open || $("picker").open || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === "/" && !typing(document.activeElement)) { e.preventDefault(); $("ex-q").focus(); $("ex-q").select(); return; }
+  const cur = document.activeElement?.closest?.("[data-item]");
+  if (!cur || typing(document.activeElement)) return;
+  const all = [...(exView === "grid" ? $("ex-grid") : $("ex-rows")).querySelectorAll("[data-item]")], i = all.indexOf(cur);
+  if (e.key === "x") { const box = cur.closest("[data-k]").querySelector("[data-sel]"); box.checked = !box.checked; box.dispatchEvent(new Event("change", { bubbles: true })); return; }
+  let cols = 1;
+  if (exView === "grid") { const top = all[0].getBoundingClientRect().top; cols = Math.max(1, all.findIndex((b) => b.getBoundingClientRect().top !== top)); if (cols < 1) cols = all.length; }
+  const to = { ArrowRight: exView === "grid" ? i + 1 : i, ArrowLeft: exView === "grid" ? i - 1 : i, ArrowDown: i + cols, ArrowUp: i - cols, Home: 0, End: all.length - 1 }[e.key];
+  if (to === undefined || to === i) return;
+  e.preventDefault();
+  const t = all[Math.max(0, Math.min(all.length - 1, to))];
+  t.focus(); t.scrollIntoView({ block: "nearest" });
+  if (to >= all.length - cols && !$("ex-more").hidden) loadExplore(false);
+});
+
+// --- one file's details
+const TEXT_BYTES = 65536;
+async function showText(r, asked) {
+  try {
+    const res = await fetch(fileUrl(r.dest), { headers: { Range: `bytes=0-${TEXT_BYTES - 1}` } });
+    const text = new TextDecoder().decode(await res.arrayBuffer());
+    if (asked !== detailSeq) return;
+    $("dt-preview").innerHTML = `<pre>${esc(text)}${r.size > TEXT_BYTES ? `\n\n<span class="hint">… the first ${fmtB(TEXT_BYTES)} of ${fmtB(r.size)}. Use Open for the rest.</span>` : ""}</pre>`;
+  } catch (e) { $("dt-preview").innerHTML = `<p class="hint" style="padding:30px">Can't show this file here. Use Open.</p>`; }
+}
+let detailSeq = 0;
+function openDetail(i) {
+  const r = exItems[i];
+  if (!r) return;
+  dtIndex = i;
+  const asked = ++detailSeq, url = fileUrl(r.dest);
+  $("dt-preview").innerHTML = IMG.test(r.dest) ? `<img src="${NEEDS_THUMB.test(r.dest) ? thumbUrl(r.dest, 1600) : url}" alt="${esc(r.name)}">`
+    : VID.test(r.dest) ? `<video src="${url}" controls preload="metadata"></video>`
+    : AUD.test(r.dest) ? `<audio src="${url}" controls preload="metadata"></audio>`
+    : /\.pdf$/i.test(r.dest) ? `<iframe src="${url}" title="Preview of ${esc(r.name)}"></iframe>`
+    : TXT.test(r.dest) ? `<p class="hint" style="padding:30px">Loading…</p>` : `<p class="hint" style="padding:30px">No preview for this kind of file. Use Open.</p>`;
+  if (TXT.test(r.dest)) showText(r, asked);
   const rows = [["Library", r.dest], ["Was", r.original], ["Date", dateOf(r).toLocaleString() + (r.taken ? " (taken)" : " (last changed)")],
-    ["Size", fmtB(r.size)], ["Kind", [r.category, r.subtype].filter(Boolean).join(" / ")], ["Camera", r.camera], ["Your rule", r.rule],
+    ["Size", fmtB(r.size)], ["Kind", [r.category, r.subtype].filter(Boolean).join(" / ")], ["Camera", r.camera],
+    ["Picture", r.width && r.height ? `${fmtN(r.width)} × ${fmtN(r.height)}` : ""], ["Your rule", r.rule],
     ["Description", r.description], ["Tags", tagsOf(r).map((t) => `<button type="button" class="chip" data-tag="${esc(t)}">${esc(t)}</button>`).join(" ")]];
   $("dt-info").innerHTML = rows.filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${k === "Tags" ? v : esc(v)}</dd>`).join("");
   $("dt-title").textContent = r.name;
   $("dt-open").href = url;
   $("dt-tags").value = tagsOf(r).join(", "); $("dt-desc").value = r.description || ""; $("dt-saved").textContent = "";
-  dtItem = r;
+  $("dt-pos").textContent = `${fmtN(i + 1)} of ${fmtN(exTotal)}`;
+  $("dt-prev").disabled = i === 0; $("dt-next").disabled = i >= exTotal - 1;
+  $("dt-reveal").hidden = !state?.local;
+  $("dt-reveal").textContent = /Mac/i.test(navigator.platform) ? "Show in Finder" : "Show in file manager";
   if (!$("detail").open) $("detail").showModal();
   if (r.src === "files") showCopies(r);
 }
+async function stepDetail(by) {
+  const to = dtIndex + by;
+  if (to < 0 || to >= exTotal) return;
+  if (to >= exItems.length) await loadExplore(false);
+  openDetail(to);
+}
+$("dt-prev").onclick = () => stepDetail(-1);
+$("dt-next").onclick = () => stepDetail(1);
+$("detail").addEventListener("keydown", (e) => {
+  if (typing(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); stepDetail(e.key === "ArrowLeft" ? -1 : 1); }
+});
+$("detail").addEventListener("close", () => {  // back to where you were in the list
+  const b = document.querySelector(`#${exView === "grid" ? "ex-grid" : "ex-rows"} [data-item="${dtIndex}"]`);
+  if (b) { b.focus({ preventScroll: true }); b.scrollIntoView({ block: "nearest" }); }
+});
+$("dt-folder").onclick = () => { const r = exItems[dtIndex]; $("detail").close(); goFolder(dirOf(r.dest)); };
+$("dt-reveal").onclick = async () => {
+  try { await api("/api/reveal", { path: exItems[dtIndex].dest }); }
+  catch (err) { $("dt-saved").textContent = `Can't show it: ${err.message}`; }
+};
 let copiesAsked = 0;
 async function showCopies(r) {
   const asked = ++copiesAsked;  // the details may be redrawn before the answer comes
@@ -627,16 +897,18 @@ async function showCopies(r) {
 }
 $("dt-edit").onsubmit = async (e) => {
   e.preventDefault();
-  const r = dtItem, tags = $("dt-tags").value.split(",").map((t) => t.trim()).filter(Boolean);
+  const r = exItems[dtIndex], tags = $("dt-tags").value.split(",").map((t) => t.trim()).filter(Boolean);
   try {
     const d = await api("/api/tags", { src: r.src, id: r.id, tags, description: $("dt-desc").value });
     r.tags = d.tags; r.description = d.description; facetsLoaded = false;
-    openDetail(r); $("dt-saved").textContent = "Saved. Rebuild views to update the by-tag folders.";
+    openDetail(dtIndex); $("dt-saved").textContent = "Saved. Rebuild views to update the by-tag folders.";
+    const el = document.querySelectorAll(`[data-k="${CSS.escape(keyOf(r))}"]`);
+    el.forEach((x) => { const html = x.tagName === "TR" ? rowHtml(r, dtIndex) : tileHtml(r, dtIndex); x.outerHTML = html; });
   } catch (err) { $("dt-saved").textContent = `Not saved: ${err.message}`; }
 };
 $("dt-close").onclick = () => $("detail").close();
 
-try { if (localStorage.getItem("pettagam-tab") === "explore") showTab("explore"); } catch (e) {}
+if (readHash() || pref("pettagam-tab") === "explore") showTab("explore");
 
 loadDoctor(); loadService();
 refresh().then(() => { if (state?.summary?.planned) { loadReport(); loadPlan(); } });
