@@ -286,7 +286,9 @@ def test_speed_check_from_panel(server, monkeypatch):  # FR-BENCH-2
     call(base, "/api/run", {"action": "bench"})
     st = wait_job(base)
     lines = {line["name"]: line for line in st["job"]["result"]["lines"]}
-    assert set(lines) == {"Scan", "Read", "Place", "Search"} and lines["Place"]["ok"] is True
+    assert set(lines) == {"Scan", "Read", "Place", "Search"}
+    # Hardlinks worked (the speed itself depends on how busy the CI machine is, so isn't checked here).
+    assert lines["Place"]["got"].endswith("files/s") and "no hardlinks" not in lines["Place"]["got"]
     assert os.listdir(lib / "_meta") == [] and (src / "a" / "IMG_1.JPG").exists()
     assert 'id="btn-bench"' in call(base, "/")
 
