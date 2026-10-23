@@ -4,7 +4,7 @@
 | --- | --- |
 | Document | Software requirements specification |
 | Product | Pettagam (பெட்டகம், "strongbox") |
-| Version | 1.5, covering Pettagam 0.6.2 |
+| Version | 1.6, covering Pettagam 0.6.3 |
 | Date | 2026-10-23 |
 | Owner | Jagadeesh (javajaga-usa) |
 | Status | Baseline. Changes go through a pull request that updates this file, the code and the tests together. |
@@ -329,6 +329,7 @@ Threat model: Pettagam runs as the owner on their own computer. The panel is a w
 | REL-1 | Every long step (scan, apply, inbox, tag, fixity) shall be safe to interrupt and run again. | `test_pipeline.py::test_apply_link_and_verify`, `test_library.py::test_fixity_slices_and_missing` |
 | REL-2 | One unreadable file shall be recorded as an error and shall not stop the others. | `test_pipeline.py::test_existing_different_file_is_never_overwritten` |
 | REL-3 | A scan that fails part-way shall release the catalog (roll back its unfinished batch and, in the panel, close its connection), so the panel and the command line are not left with "database is locked". | `scan.py`, `panel.py` | `test_safety.py::test_scan_stores_inode_numbers_past_sqlite_range` |
+| REL-4 | The panel shall close every catalog connection a request or step opens when it ends (not leave them for Python's garbage collector), so it can run for days without running out of open files, and shall raise its own open-file limit at start (macOS starts programs at 256). | `panel.py` | `test_panel.py::test_panel_closes_catalog_connections`, `test_panel.py::test_panel_raises_its_open_file_limit` |
 | PERF-1 | The scan should examine at least 1,000 files per second on the N300 Pro with 2 workers and the catalog on the SSD. | `pettagam bench` (FR-BENCH-1); N300 number still to record (gap G-12) |
 | PERF-2 | Hardlink placement should run at least 2,000 files per second on the same drive. | `pettagam bench`; N300 number still to record (gap G-12) |
 | PERF-3 | Duplicate detection shall read in full only files that share both size and a 64 KB sample with another file. | `test_library.py::test_stats_and_duplicates` |

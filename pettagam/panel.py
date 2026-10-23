@@ -26,7 +26,7 @@ from urllib.parse import parse_qs, urlparse, urlsplit
 
 from . import library
 from .apply import apply
-from .db import connect, get_meta
+from .db import connect as _connect, get_meta
 from .hashing import find_duplicates
 from .plan import SPLIT_AT, plan
 from .report import report
@@ -85,6 +85,38 @@ def save_settings(s: dict) -> None:
     os.replace(SETTINGS + ".tmp", SETTINGS)
 
 
+# Every catalog connection a request or a step opens is closed when it is done. Python only frees an unused
+# SQLite connection when its garbage collector next runs, which in the panel can take hours, so without this
+# each page refresh left two files open until the panel hit the system's limit (256 on macOS) and SQLite
+# failed with "unable to open database file".
+_opened = threading.local()
+
+
+def connect(path: str):
+    con = _connect(path)
+    _opened.__dict__.setdefault("cons", []).append(con)
+    return con
+
+
+def close_connections() -> None:
+    """Close the catalog connections this thread opened."""
+    for con in _opened.__dict__.pop("cons", []):
+        with contextlib.suppress(Exception):
+            con.close()
+
+
+def more_open_files(want: int = 10240) -> None:
+    """Raise this process's open-file limit towards WANT (macOS starts programs at 256)."""
+    try:
+        import resource
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        new = want if hard == resource.RLIM_INFINITY else min(want, hard)
+        if soft != resource.RLIM_INFINITY and soft < new:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (new, hard))
+    except (ImportError, ValueError, OSError):
+        pass
+
+
 class Job:
     """One step at a time, run in the background, with a log the page polls."""
 
@@ -119,6 +151,7 @@ class Job:
                 self.result = {"error": repr(e)}
                 self.say(f"Error: {e!r}")
             finally:
+                close_connections()
                 with self.lock:
                     self.running, self.finished = False, time.time()
 
@@ -579,6 +612,18 @@ class Handler(BaseHTTPRequestHandler):
                 left -= len(chunk)
 
     def do_GET(self):
+        try:
+            self._get()
+        finally:
+            close_connections()
+
+    def do_POST(self):
+        try:
+            self._post()
+        finally:
+            close_connections()
+
+    def _get(self):
         u = urlparse(self.path)
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
         if not self._authorized(q):
@@ -646,7 +691,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, open(p, encoding="utf-8").read() if os.path.exists(p) else "", "text/plain")
         self._send(404, {"error": "not found"})
 
-    def do_POST(self):
+    def _post(self):
         # Only accept requests from the page itself, not from other websites.
         origin = self.headers.get("Origin", "")
         if origin and urlparse(origin).netloc != self.headers.get("Host", ""):
@@ -797,6 +842,7 @@ def make_server(host: str, port: int, cert: str = None, key: str = None):
 def serve(host: str = "127.0.0.1", port: int = 8484, open_browser: bool = True, tls: bool = False,
           cert: str = None, key: str = None) -> None:
     private_dir(HOME)
+    more_open_files()
     local = host in ("127.0.0.1", "localhost", "::1")
     Handler.token = None if local else secrets.token_urlsafe(16)
     if (cert is None) != (key is None):

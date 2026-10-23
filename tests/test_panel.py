@@ -386,3 +386,51 @@ def test_explore_thumbnails_and_show_in_folder(server, monkeypatch):  # FR-PANEL
         call(base, "/api/reveal?token=secret123", {"path": rel}, headers={"Cookie": "pettagam=secret123"})
     assert e.value.code == 403
     assert len(shown) == 1
+
+
+def _open_catalog_files(db):
+    """How many files this process has open on the catalog (Linux and macOS)."""
+    import subprocess
+    import sys
+    if sys.platform.startswith("linux"):
+        names = []
+        for fd in os.listdir("/proc/self/fd"):
+            try:
+                names.append(os.readlink(f"/proc/self/fd/{fd}"))
+            except OSError:
+                pass
+    else:
+        out = subprocess.run(["lsof", "-Fn", "-p", str(os.getpid())], capture_output=True, text=True).stdout
+        names = [line[1:] for line in out.splitlines() if line.startswith("n")]
+    return sum(os.path.realpath(n).startswith(os.path.realpath(db)) for n in names)
+
+
+def test_panel_closes_catalog_connections(server):  # REL-4
+    import gc
+    base, tmp = server
+    _placed_library(base, tmp)
+    db = panel.DEFAULTS["db"]
+    gc.collect()
+    gc.disable()  # the leak only showed while Python's garbage collector hadn't run, as in a quiet panel
+    try:
+        before = _open_catalog_files(db)
+        for path in ("/api/state", "/api/stats", "/api/explore", "/api/folders", "/api/facets") * 10:
+            call(base, path)
+        call(base, "/api/run", {"action": "views"})
+        wait_job(base)
+        assert _open_catalog_files(db) <= before + 2
+    finally:
+        gc.enable()
+
+
+def test_panel_raises_its_open_file_limit(monkeypatch):  # REL-4
+    import resource
+    got = []
+    monkeypatch.setattr(resource, "getrlimit", lambda what: (256, 10_000))
+    monkeypatch.setattr(resource, "setrlimit", lambda what, lim: got.append(lim))
+    panel.more_open_files()
+    assert got == [(10_000, 10_000)]
+    got.clear()
+    monkeypatch.setattr(resource, "getrlimit", lambda what: (20_000, resource.RLIM_INFINITY))
+    panel.more_open_files()
+    assert got == []  # already high enough: left alone

@@ -4,6 +4,11 @@ All notable changes to Pettagam. Versions follow [semantic versioning](https://s
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-10-23
+
+### Fixed
+- **A long dry run in the panel failed at the end with `unable to open database file`.** Each page refresh left two catalog files open until Python's garbage collector got round to them, which in a quiet panel can be hours; over a 50-minute scan the panel reached macOS's limit of 256 open files. Every request and step now closes its catalog connections when it finishes, and the panel raises its open-file limit when it starts. Run the dry run again after updating.
+
 ## [0.6.2] - 2026-10-23
 
 ### Changed
