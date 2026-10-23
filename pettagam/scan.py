@@ -8,6 +8,8 @@ from . import classify as cl
 from .db import set_meta
 from .sniff import sniff_file
 
+PROGRESS_EVERY = 10  # seconds between progress lines in long steps
+
 
 def walk(root: str):
     """Yield (relpath, stat) for every regular file, skipping system folders. Never follows symlinks."""
@@ -88,6 +90,7 @@ def _scan(con, source: str, workers: int, progress) -> int:
         "SELECT path, size, mtime, tags, description FROM files WHERE tags IS NOT NULL")}
     con.execute("DELETE FROM files")
     t0, n, last = time.time(), 0, 0
+    said = t0
     sql = ("INSERT INTO files(path,name,size,mtime,dev,ino,ext,kind,width,height,camera,has_exif,"
            "has_tags,junk,taken) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
     # One task per directory keeps overhead low while still reading several folders at once,
@@ -102,10 +105,11 @@ def _scan(con, source: str, workers: int, progress) -> int:
                 if rows:
                     con.executemany(sql, rows)
                     n += len(rows)
-            if n - last >= 20000:
+            # Say how far it got every 10 seconds, so a slow drive doesn't look stuck; save every 20,000 files.
+            if n - last >= 20000 or time.time() - said >= PROGRESS_EVERY:
                 con.commit()
-                last = n
-                progress(f"  scanned {n:,} files ({n / (time.time() - t0):,.0f}/s)")
+                last, said = n, time.time()
+                progress(f"  scanned {n:,} files ({n / (time.time() - t0):,.0f}/s), {len(pending):,} folders still to read")
     con.commit()
     if kept:
         con.executemany("UPDATE files SET tags=?, description=? WHERE path=? AND size=? AND mtime=?",

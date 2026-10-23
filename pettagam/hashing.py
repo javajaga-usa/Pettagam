@@ -2,6 +2,7 @@
 
 import hashlib
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 from .db import get_meta
@@ -38,7 +39,18 @@ def _run(pool, root, rows, limit):
             return row["id"], hash_file(os.path.join(root, row["path"]), limit)
         except OSError:
             return row["id"], None
-    return list(pool.map(one, rows))
+    return pool.map(one, rows)  # results in order, as they finish
+
+
+def _counting(results, total: int, verb: str, progress):
+    """Pass RESULTS through, saying every 10 seconds how many of TOTAL are done."""
+    from .scan import PROGRESS_EVERY
+    said = time.time()
+    for i, r in enumerate(results, 1):
+        if time.time() - said >= PROGRESS_EVERY:
+            said = time.time()
+            progress(f"  {verb} {i:,} of {total:,} files")
+        yield r
 
 
 def find_duplicates(con, workers: int = 2, progress=print) -> dict:
@@ -50,7 +62,7 @@ def find_duplicates(con, workers: int = 2, progress=print) -> dict:
         f"(SELECT size FROM files WHERE {base} GROUP BY size HAVING COUNT(*) > 1)").fetchall()
     progress(f"  {len(same_size):,} files share a size with another file; sampling them")
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        for fid, h in _run(pool, root, same_size, SAMPLE):
+        for fid, h in _counting(_run(pool, root, same_size, SAMPLE), len(same_size), "sampled", progress):
             con.execute("UPDATE files SET quick_hash=? WHERE id=?", (h, fid))
         con.commit()
         # A file no bigger than the sample was read in full already.
@@ -60,7 +72,7 @@ def find_duplicates(con, workers: int = 2, progress=print) -> dict:
             f"(SELECT size, quick_hash FROM files WHERE quick_hash IS NOT NULL GROUP BY size, quick_hash "
             f"HAVING COUNT(*) > 1)").fetchall()
         progress(f"  {len(candidates):,} candidates after sampling; hashing them in full ({ALGO})")
-        for fid, h in _run(pool, root, candidates, 0):
+        for fid, h in _counting(_run(pool, root, candidates, 0), len(candidates), "hashed", progress):
             con.execute("UPDATE files SET full_hash=? WHERE id=?", (h, fid))
         con.commit()
 

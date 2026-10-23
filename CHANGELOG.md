@@ -4,6 +4,12 @@ All notable changes to Pettagam. Versions follow [semantic versioning](https://s
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-10-23
+
+### Changed
+- **The panel shows what is happening right now.** The status line names the running step, how long it has run and its latest progress (for example "Running: dry run, 4 min · scanned 38,000 files (160/s), 212 folders still to read"), and says when the last step failed. A scan reports at least every 10 seconds instead of every 20,000 files, which on a slow drive could mean minutes of silence, and the duplicate check reports how many files it has sampled and hashed. While a dry run runs, the numbers at the top are marked as being rebuilt.
+- *Measure speed* is named in the status line (it showed "undefined").
+
 ## [0.6.1] - 2026-10-23
 
 ### Fixed

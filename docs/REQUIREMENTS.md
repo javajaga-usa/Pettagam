@@ -4,7 +4,7 @@
 | --- | --- |
 | Document | Software requirements specification |
 | Product | Pettagam (பெட்டகம், "strongbox") |
-| Version | 1.4, covering Pettagam 0.6.1 |
+| Version | 1.5, covering Pettagam 0.6.2 |
 | Date | 2026-10-23 |
 | Owner | Jagadeesh (javajaga-usa) |
 | Status | Baseline. Changes go through a pull request that updates this file, the code and the tests together. |
@@ -346,6 +346,7 @@ Threat model: Pettagam runs as the owner on their own computer. The panel is a w
 | USE-3 | Installing and removing shall each be one double-click on the Mac. | `test_launchers.py::test_setup_builds_the_app_and_uninstall_removes_it_but_never_files` |
 | USE-4 | The panel should work on a phone-sized screen and be usable by keyboard. | Manual; keyboard and screen-reader use not yet audited (gap G-14) |
 | USE-6 | The panel should meet WCAG 2.2 AA for keyboard and screen-reader use: every control is a real button, link or labelled field (reachable with Tab, used with Enter or Space), focus is always visible, the tabs follow the ARIA tab pattern (arrow keys), status and results are announced (`aria-live`), dialogs are named, a skip link leads past the header, and text colours have at least 4.5:1 contrast in light and dark mode. | `test_panel.py::test_panel_controls_have_names_and_work_from_the_keyboard`, `test_panel.py::test_panel_text_colours_are_readable`; checked by hand in Chromium with the keyboard only |
+| USE-7 | Long steps shall say how far they got at least every 10 seconds (scan: files so far, speed and folders left; duplicate check: files sampled and hashed), and the panel's status line shall name the running step, how long it has run and its latest progress, say when the last step failed, and mark the numbers a running dry run is rebuilding. | `scan.py`, `hashing.py`, `panel.html` | `test_pipeline.py::test_long_steps_say_how_far_they_got` |
 
 ### 6.6 Maintainability
 
