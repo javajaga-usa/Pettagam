@@ -4,6 +4,22 @@ All notable changes to Pettagam. Versions follow [semantic versioning](https://s
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-23
+
+### Added
+- **Browse the library by folder** in Explore: the folders inside the current one, with how many files each holds, and a trail of links back to the top. Searching and filters then look only inside that folder. Back and reloading keep your place, so a folder can be bookmarked. From the command line: `pettagam folders [FOLDER]`, and `find --folder` / `export --folder`.
+- **Sort** Explore and `pettagam find --sort` by newest, oldest, name, largest or smallest. Explore remembers your choice.
+- **List view**: switch Explore between the picture grid and a list with name, folder, date, size and tags. Click a folder in the list to go there.
+- **Choose many files and tag them at once**: tick files (Shift-click for a run, or Select all shown, or every file the search finds), then add or remove tags on all of them.
+- **Keyboard**: `/` jumps to search, the arrow keys move between files, Enter opens one, `x` chooses it. In a file's details, ← and → (or Previous and Next) step through the results without closing it.
+- File details preview audio and the start of text files (notes, CSV, JSON...), show a picture's size in pixels, and have **Show its folder** and, on the computer running the panel, **Show in Finder**.
+- **Faster thumbnails on the Mac**: the grid shows small JPEGs made once with macOS's own `sips`, instead of loading every full-size photo off the drive. HEIC and TIFF photos now show in every browser. They are kept in `~/.pettagam/thumbs/` (at most 1 GB, oldest dropped first).
+- More results load by themselves as you scroll.
+- `pettagam bench` also times sorting and folder browsing.
+
+### Changed
+- The catalog is now version 3: opening it adds indexes by folder, size and name (a copy of the catalog is kept first, as before). Over a million files, the top folders list in about 0.13 s and sorting by name or size takes about 0.02 s.
+
 ## [0.5.0] - 2026-10-22
 
 ### Added

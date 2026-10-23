@@ -54,7 +54,7 @@ Open the Pettagam app (or run `pettagam panel`, or double-click `launchers/Petta
 4. **Place files**, then **Check everything is in sync.** **Undo placement…** takes it all back out again if you change your mind.
 5. **Keep it tidy:** choose an inbox folder and press **Sort the inbox now**, or tick **Sort the inbox automatically in the background**. **Rebuild views** and **Add AI tags…** are here too (tagging shows the number of files and a rough cost first).
 
-The **Explore library** tab shows every file in the library, newest first, with thumbnails. Search by any word in the name, folder, tags or description, filter by kind and year, or click a tag. Click a file to see a preview, where it came from (and any identical copies in the old files), its date and tags, to edit its tags, and to open it. **On this day** shows what was taken on today's date in earlier years.
+The **Explore library** tab shows every file in the library, newest first, with thumbnails. Search by any word in the name, folder, tags or description, filter by kind and year, or click a tag. Click a folder to look inside it (the trail above takes you back up), sort by date, name or size, and switch between the picture grid and a list. Tick files to add or remove tags on many at once. From the keyboard: `/` searches, the arrow keys move, Enter opens, `x` ticks. Click a file to see a preview, where it came from (and any identical copies in the old files), its date and tags, to edit its tags, and to open it. **On this day** shows what was taken on today's date in earlier years.
 
 The panel remembers your folders, shows live progress, and keeps its catalog in `~/.pettagam/` on your internal drive. To stop it, close the Terminal window that opened with it.
 
@@ -227,6 +227,8 @@ It shows how many files will be sent and a rough cost, and asks before starting.
 pettagam find beach 2019                 # words in the name, folder, tags, description or camera
 pettagam find --tag receipt --year 2024  # also --type images|documents|...; --json for scripts
 pettagam find --on-this-day --type images # photos taken on today's date in earlier years (--day 12-25 for another)
+pettagam find --folder images/photos --sort largest   # also oldest, name, smallest
+pettagam folders documents               # the folders inside one, with how many files each holds
 pettagam stats                           # files by type, by year, cameras, top tags, space saved
 pettagam duplicates --csv dupes.csv      # sets of identical old files, biggest waste first
 ```

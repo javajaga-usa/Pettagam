@@ -1,7 +1,7 @@
 """Pettagam: organize a messy file tree into a smart, type-based library."""
 import sys
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 MIN_PYTHON = (3, 13)
 
 # Checked here, before any module that uses newer syntax is imported, so an old Python gets a clear message.

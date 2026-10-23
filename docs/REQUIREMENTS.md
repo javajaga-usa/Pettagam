@@ -4,8 +4,8 @@
 | --- | --- |
 | Document | Software requirements specification |
 | Product | Pettagam (பெட்டகம், "strongbox") |
-| Version | 1.2, covering Pettagam 0.5.0 |
-| Date | 2026-10-22 |
+| Version | 1.3, covering Pettagam 0.6.0 |
+| Date | 2026-10-23 |
 | Owner | Jagadeesh (javajaga-usa) |
 | Status | Baseline. Changes go through a pull request that updates this file, the code and the tests together. |
 
@@ -112,7 +112,9 @@ Each story lists the requirements that implement it (section 5 and 6). Acceptanc
 - Requirements: FR-INBOX-1..7, FR-SERVICE-1..4, DS-2, DS-3, DS-6.
 
 **US-6. Find things.** As the owner, I want to search by name, folder, year, camera and descriptive tags, and copy a selection elsewhere.
-- Requirements: FR-FIND-1..6, FR-VIEWS-1..3, FR-TAG-1..6.
+- AC-6.1 I can walk the library's folders in Explore, see how many files each holds, and sort what I see by date, name or size.
+- AC-6.2 I can choose many files (or everything a search finds) and add or remove tags on all of them at once.
+- Requirements: FR-FIND-1..8, FR-VIEWS-1..3, FR-TAG-1..7, FR-PANEL-7.
 
 **US-7. Know the drive is healthy.** As the owner, I want to learn about silent damage before it spreads to backups.
 - AC-7.1 A file whose content changed while its size and date did not is reported as damaged and stays flagged until restored.
@@ -130,7 +132,7 @@ Each story lists the requirements that implement it (section 5 and 6). Acceptanc
 - Requirements: FR-MOVE-1..3, PLAT-1..6.
 
 **US-10. Use it without a Terminal.** As the owner, I want to double-click to install, open and remove Pettagam.
-- Requirements: FR-PANEL-1..6, FR-INSTALL-1..4, USE-1..4.
+- Requirements: FR-PANEL-1..7, FR-INSTALL-1..4, USE-1..4.
 
 **US-11. Use it from another computer at home.** As the owner, I may run the panel on the Ubuntu server and open it from my laptop, without strangers being able to use it.
 - Requirements: SEC-1..9.
@@ -230,12 +232,15 @@ Each story lists the requirements that implement it (section 5 and 6). Acceptanc
 | FR-TAG-4 | A file that fails or is declined shall not stop the others. | `tag.py` | `test_milestone2.py::test_tagging_is_resumable_and_feeds_rules` |
 | FR-TAG-5 | Tags shall be usable in rules, views, search and export. | `rules.py`, `views.py`, `library.py` | `test_milestone2.py::test_tagging_is_resumable_and_feeds_rules` |
 | FR-TAG-6 | The owner shall be able to add, remove or replace tags and the description by hand, without AI: on one or more files (`tags FILE...`), on every file a search finds (`tags --match`, after confirming), or in Explore's file details. Tags are cleaned the same way as AI tags (lowercase, no commas, at most 20), search sees the change at once, and AI tagging leaves hand-tagged files alone unless `--retag`. | `library.py`, `cli.py`, `panel.py`, `panel.html` | `test_library.py::test_tags_by_hand_from_the_command_line`, `test_library.py::test_edit_tags_limits_and_cleans`, `test_panel.py::test_explore_inbox_and_files` |
+| FR-TAG-7 | In Explore the owner shall be able to choose files (a checkbox on each, Shift for a run, all shown, or every file the search finds) and add or remove tags on all of them at once, cleaned as in FR-TAG-6, saying how many files changed. A bulk change names files by catalog row or by search, at most 100,000 files, and a malformed one is refused. | `panel.py`, `panel.html` | `test_panel.py::test_explore_folders_sorting_and_bulk_tags` |
 | FR-FIND-1 | `find` shall search words in the name, folder, tags, description and camera, with type, tag and year filters. | `library.py` | `test_library.py::test_search_and_find_command` |
 | FR-FIND-2 | `stats` shall summarize by type, year, camera and tag, and the space saved. | `library.py` | `test_library.py::test_stats_and_duplicates` |
 | FR-FIND-3 | `duplicates` shall list identical sets, biggest waste first, and write them to CSV. | `library.py` | `test_library.py::test_stats_and_duplicates` |
 | FR-FIND-4 | `export` shall copy matching files elsewhere, never overwriting (a different file gets ` (2)`), without changing the library. | `library.py` | `test_library.py::test_export_copies_a_selection_without_overwriting` |
 | FR-FIND-5 | `find --on-this-day` (or `--day MM-DD`) and Explore's **On this day** button shall list the files taken (or, without a capture date, last changed) on that day of the year in any year, newest first, combined with the other filters. A malformed day is refused. | `library.py`, `cli.py`, `panel.py`, `panel.html` | `test_library.py::test_on_this_day`, `test_panel.py::test_explore_inbox_and_files` |
 | FR-FIND-6 | Explore's file details shall list the identical copies of that file that stayed in the old files (full paths, the first 50 and how many more), saying that only one went into the library. | `library.py`, `panel.py`, `panel.html` | `test_library.py::test_copies_of_a_library_file`, `test_panel.py::test_explore_inbox_and_files` |
+| FR-FIND-7 | Explore and `pettagam folders [FOLDER]` shall browse the library by folder: the subfolders directly inside a folder, each with how many files and bytes are anywhere under it, and how many files sit in the folder itself, counting placed and inbox files and nothing else (no `_meta`, no views). Explore shows the path as a trail of links back to the top, and the folder is kept in the address so Back and reloading work. `find --folder`, `export --folder` and Explore's search then look only under that folder (a whole folder name, not a prefix of one). A folder that would leave the library (`..`) is refused. | `library.py`, `cli.py`, `panel.py`, `panel.html` | `test_library.py::test_folders_and_sorting`, `test_library.py::test_folders_include_inbox_files`, `test_panel.py::test_explore_folders_sorting_and_bulk_tags` |
+| FR-FIND-8 | Explore and `find --sort` shall order files newest first (the default), oldest first, by name (A to Z, ignoring case), largest first or smallest first, combined with every filter and paging through without repeating or skipping a file. Explore remembers the chosen order. An unknown order is refused. | `library.py`, `cli.py`, `panel.py`, `panel.html` | `test_library.py::test_folders_and_sorting`, `test_panel.py::test_explore_folders_sorting_and_bulk_tags` |
 
 ### 5.10 Damage check, health check, undo, relocate
 
@@ -268,6 +273,7 @@ Each story lists the requirements that implement it (section 5 and 6). Acceptanc
 | FR-PANEL-4 | The panel shall show the health check, switch background sorting on and off, and run undo. | `panel.py` | `test_panel.py::test_doctor_service_and_undo_from_panel` |
 | FR-PANEL-5 | The folder browser shall list folders starting from `/Volumes`, `/srv`, `/mnt`, `/media` and home. | `panel.py` | `test_panel.py::test_browse_lists_folders` |
 | FR-PANEL-6 | The panel and the command line shall share one catalog (`~/.pettagam/pettagam.db` unless `PETTAGAM_DB`, `--db` or `./pettagam.db` says otherwise). | `cli.py` | `test_library.py::test_default_db` |
+| FR-PANEL-7 | Explore shall show files as a grid of pictures or as a list (name, folder, date, size, tags), remembered between visits, load more as the end scrolls into view, and work from the keyboard (`/` to search, arrow keys between files, Enter to open, `x` to choose; ← and → in a file's details for the previous and next file). Details shall preview pictures, video, audio, PDFs and the start of text files (first 64 KB), and offer to show the file's folder in Explore and, on the computer running the panel only, in Finder or the file manager. On macOS the grid shows small JPEGs made once with `sips` (also for HEIC and TIFF, which most browsers can't show), at most two at a time, kept in `~/.pettagam/thumbs/` up to 1 GB; elsewhere the file itself is sent. | `panel.py`, `panel.html` | `test_panel.py::test_explore_thumbnails_and_show_in_folder`; checked by hand in Chromium (grid, list, folders, Back, selection, keys, previews, phone width) |
 | FR-INSTALL-1 | `Setup Pettagam.command` shall build a Pettagam app in `~/Applications` on the Mac itself, and optionally set up AI tagging in a `.venv`. | `Setup Pettagam.command` | `test_launchers.py::test_setup_builds_the_app_and_uninstall_removes_it_but_never_files` |
 | FR-INSTALL-2 | `launchers/setup-ubuntu.sh` shall add a working `pettagam` command and a menu entry. | `launchers/setup-ubuntu.sh` | `test_launchers.py::test_ubuntu_setup_adds_a_working_command` |
 | FR-INSTALL-3 | `Uninstall Pettagam.command` shall remove the app, background job and `.venv`, ask before removing settings, and never touch the user's files. | `Uninstall Pettagam.command` | `test_launchers.py::test_setup_builds_the_app_and_uninstall_removes_it_but_never_files` |
@@ -314,6 +320,7 @@ Threat model: Pettagam runs as the owner on their own computer. The panel is a w
 | PRIV-2 | AI tagging shall send only library files of the supported kinds, and at most the first 8 KB of a text file. | `tag.py` | `test_milestone2.py::test_tagging_is_resumable_and_feeds_rules`, `test_requirements.py::test_tagging_sends_only_the_start_of_a_text_file` |
 | PRIV-3 | `~/.pettagam/` (catalog, settings, logs: a list of every file name) shall be readable only by the owner (mode 0700). | `safeio.py`, `panel.py`, `cli.py`, `service.py` | `test_safety.py::test_private_dir_is_only_for_this_user`, `test_safety.py::test_panel_settings_folder_is_private` |
 | PRIV-4 | Pettagam shall send no telemetry. | all | Code review |
+| PRIV-5 | Small pictures made for Explore (FR-PANEL-7) shall stay on this computer, in `~/.pettagam/thumbs/` (readable by the owner only, PRIV-3), named by a hash so the folder doesn't list file names. | `panel.py` | `test_panel.py::test_explore_thumbnails_and_show_in_folder` |
 
 ### 6.4 Reliability and performance
 
@@ -324,7 +331,7 @@ Threat model: Pettagam runs as the owner on their own computer. The panel is a w
 | PERF-1 | The scan should examine at least 1,000 files per second on the N300 Pro with 2 workers and the catalog on the SSD. | `pettagam bench` (FR-BENCH-1); N300 number still to record (gap G-12) |
 | PERF-2 | Hardlink placement should run at least 2,000 files per second on the same drive. | `pettagam bench`; N300 number still to record (gap G-12) |
 | PERF-3 | Duplicate detection shall read in full only files that share both size and a 64 KB sample with another file. | `test_library.py::test_stats_and_duplicates` |
-| PERF-4 | The panel's Explore tab should answer a search over 1 million files in under 1 second. | `pettagam bench`; `test_bench.py::test_search_over_many_files_is_quick` (100,000 files in CI). In the build container, 1 million files: opening view 0.02 s, a rare word 0.003 s, a common word 0.1 s, a 1-2 letter word (no index) 0.5 s |
+| PERF-4 | The panel's Explore tab should answer a search over 1 million files in under 1 second. | `pettagam bench`; `test_bench.py::test_search_over_many_files_is_quick` (100,000 files in CI). In the build container, 1 million files: opening view 0.02 s, a rare word 0.003 s, a common word 0.1 s, a 1-2 letter word (no index) 0.5 s; by name or by size 0.02 s, oldest first in a folder 0.2 s, the folders at the top 0.13 s and inside a folder 0.03 s (FR-FIND-7, 8) |
 | PERF-6 | Explore's opening view (newest first) shall come from an index, not by sorting the whole library, and placed and inbox files shall be merged in date order with pages that join up. | `test_bench.py::test_newest_first_uses_the_index`, `test_bench.py::test_search_merges_placed_and_inbox_files_newest_first` |
 | PERF-7 | Words of 3 or more letters shall be found through an SQLite full-text index (FTS5, trigram tokenizer) over the folder and name, tags, description and camera of library files, with the same results as a plain substring search. The index shall be built once for an existing catalog and kept in step by triggers (placing, undo, tagging, inbox, a fresh scan). Where Python's SQLite lacks trigram search, search shall still work (slower) and the health check shall say so. | `test_catalog.py::test_word_search_index_finds_what_like_finds`, `test_catalog.py::test_word_search_index_follows_every_change`, `test_catalog.py::test_old_catalog_gets_the_search_index`, `test_catalog.py::test_health_check_reports_the_search_index` |
 | PERF-5 | The background jobs shall run at low priority (`Nice=10`, idle I/O) so they don't slow the computer. | `test_requirements.py::test_background_jobs_run_at_low_priority_as_the_user` |
@@ -415,7 +422,7 @@ The audit compared the 0.3.0 code, tests and README against the requirements abo
 | G-18 | Python 3.9 had reached its end of life. The owner chose 3.13 as the minimum (2026-10-22). `requires-python = ">=3.13"`, CI tests 3.13 and 3.14, the setup scripts find 3.13 or point to python.org (Mac) or the deadsnakes PPA (Ubuntu 24.04), and Pettagam runs from its own `.venv`. | PLAT-7, MAINT-3 |
 | G-17 | No licence. Chose MIT, the usual licence for a personal tool: anyone may use and change the code if they keep the copyright notice, with no warranty. `LICENSE`, and `license = "MIT"` in `pyproject.toml` so the built package says so. If the repository should stay closed instead, delete `LICENSE` and the two `license` lines. | MAINT-5 |
 | G-20 | CI now runs `ruff check` (pinned version) and parses every shell script. The code was brought up to date for 3.13 on the way (`X \| None` instead of `Optional`, no `from __future__` imports, `zip(strict=True)` where lengths must match). Type checking with `mypy` is left out for now: the code has few annotations, so it would find little. | MAINT-6 |
-| G-19 | The catalog has a layout version (now 2) with numbered upgrade steps; an upgrade keeps a copy of the catalog as it was, and a newer catalog is refused. Version 2 adds an index that makes `duplicates` fast on large collections. | DS-9 |
+| G-19 | The catalog has a layout version (now 3) with numbered upgrade steps; an upgrade keeps a copy of the catalog as it was, and a newer catalog is refused. Version 2 adds an index that makes `duplicates` fast on large collections; version 3 adds indexes by folder, size and name for browsing and sorting Explore (PERF-4). | DS-9 |
 | G-13 | Network mode was plain HTTP. `pettagam panel --host 0.0.0.0 --tls` now serves HTTPS with a certificate made for this computer (or your own), and plain network mode warns that it isn't encrypted. The SSH tunnel stays the simplest choice for one person. | SEC-10 |
 | G-14 | The panel was checked for keyboard-only and screen-reader use and fixed: folder lists, library tiles and tags were clickable boxes a keyboard couldn't reach (now buttons), search fields and menus had no names, there was no visible focus or skip link, results weren't announced, the Open button was a button inside a link, and four light-mode colours were below 4.5:1 contrast. | USE-6 |
 
