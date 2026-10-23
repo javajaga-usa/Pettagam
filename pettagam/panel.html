@@ -25,7 +25,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
 header { padding: 20px 24px 8px; max-width: 1100px; margin: 0 auto; display: flex; align-items: baseline; gap: 12px; }
 header h1 { margin: 0; font-size: 22px; }
 header .ta { color: var(--muted); }
-header .status { margin-left: auto; font-size: 13px; color: var(--muted); }
+header .status { margin-left: auto; font-size: 13px; color: var(--muted); max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 main { max-width: 1100px; margin: 0 auto; padding: 8px 24px 40px; display: grid; gap: 16px; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
 .card h2 { margin: 0 0 4px; font-size: 16px; display: flex; align-items: center; gap: 10px; }
@@ -343,7 +343,11 @@ function render() {
   setPath("source", settings.source);
   setPath("library", settings.library);
   const busy = job.running;
-  $("status").textContent = busy ? `Running: ${({ dryrun: "dry run", apply: "placing files", verify: "sync check", inbox: "sorting the inbox", views: "building views", tag: "AI tagging", undo: "undo", fixity: "damage check" })[job.name]}…` : "Ready";
+  const step = ({ dryrun: "dry run", apply: "placing files", verify: "sync check", inbox: "sorting the inbox", views: "building views", tag: "AI tagging", undo: "undo", fixity: "damage check", bench: "measuring speed" })[job.name] || job.name;
+  const mins = busy && job.started ? Math.floor((Date.now() / 1000 - job.started) / 60) : 0;
+  const lastLine = job.log.length ? job.log[job.log.length - 1].replace(/^\d\d:\d\d:\d\d\s+/, "").trim() : "";
+  $("status").textContent = busy ? `Running: ${step}, ${mins ? `${mins} min` : "just started"}${lastLine ? ` · ${lastLine}` : ""}`
+    : job.finished && job.result?.error ? `Last step (${step}) failed: see the log` : "Ready";
   setPath("inbox", settings.inbox);
   $("btn-inbox").disabled = busy || !settings.inbox || !settings.library;
   $("btn-views").disabled = busy || !summary.planned;
@@ -372,7 +376,8 @@ function render() {
     [fmtN(review), "need review"],
     [fmtN(junk.files), "junk skipped"],
     [fmtN(summary.placed), summary.errors ? `placed, ${fmtN(summary.errors)} errors` : "placed so far"],
-  ].map(([b, s]) => `<div class="stat"><b>${b}</b><span>${s}</span></div>`).join("");
+  ].map(([b, s]) => `<div class="stat"><b>${b}</b><span>${s}</span></div>`).join("") +
+    (busy && job.name === "dryrun" ? `<p class="hint" style="grid-column:1/-1;margin:0">These numbers are being rebuilt by the dry run that is running now; they are final when it finishes.</p>` : "");
   $("folders").innerHTML = `<table><tr><th>Folder</th><th class="n">Files</th><th class="n">Size</th><th>Placed</th></tr>` +
     summary.folders.map((f) => `<tr><td class="mono">${esc(f.folder)}/</td><td class="n">${fmtN(f.files)}</td><td class="n">${fmtB(f.bytes)}</td>` +
       `<td><div class="bar"><i style="width:${(100 * (f.done || 0) / f.files).toFixed(1)}%"></i></div></td></tr>`).join("") + `</table>`;

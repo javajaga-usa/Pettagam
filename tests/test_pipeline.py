@@ -201,3 +201,16 @@ def test_safe_name_and_ext():
     assert safe_name("trailing. ", "") == "trailing"
     assert cl.normalize_ext("x.JPEG") == "jpg"
     assert cl.normalize_ext(".bashrc") == ""
+
+
+def test_long_steps_say_how_far_they_got(tree, monkeypatch):  # USE-7
+    from pettagam import scan as sc
+    monkeypatch.setattr(sc, "PROGRESS_EVERY", 0)  # every file, instead of every 10 seconds
+    src, lib, dbp = tree
+    said = []
+    con = connect(str(dbp))
+    n = scan(con, str(src), progress=said.append)
+    assert n and any("folders still to read" in m for m in said)
+    said.clear()
+    find_duplicates(con, progress=said.append)
+    assert any(m.strip().startswith("sampled ") for m in said)
