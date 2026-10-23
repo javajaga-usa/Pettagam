@@ -4,6 +4,12 @@ All notable changes to Pettagam. Versions follow [semantic versioning](https://s
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-23
+
+### Fixed
+- **Scanning an exFAT drive on a recent macOS stopped at once** with `OverflowError: Python int too large to convert to SQLite INTEGER`. macOS's new FSKit exFAT driver gives some files inode numbers just under 2^64, which SQLite can't store as they are; Pettagam now stores them wrapped into SQLite's range.
+- A scan that failed part-way could keep the catalog locked, so the next step (for example Measure speed) failed with `database is locked` after a minute. A failed scan now lets go of the catalog at once.
+
 ## [0.6.0] - 2026-10-23
 
 ### Added

@@ -138,14 +138,17 @@ BENCH_SEARCH_ROWS = 200_000  # the panel's speed check keeps the made-up catalog
 def _steps(action: str, s: dict):
     def dryrun(say):
         con = connect(s["db"])
-        scan(con, s["source"], workers=int(s["workers"]), progress=say)
-        find_duplicates(con, workers=int(s["workers"]), progress=say)
-        rules = load_rules(default_path(s["library"]))
-        if rules:
-            say(f"Using {len(rules)} of your rules from {default_path(s['library'])}")
-        counts = plan(con, s["library"], split_at=int(s["split_at"]), rules=rules, progress=say)
-        report(con, s["report"], progress=say)
-        return counts
+        try:
+            scan(con, s["source"], workers=int(s["workers"]), progress=say)
+            find_duplicates(con, workers=int(s["workers"]), progress=say)
+            rules = load_rules(default_path(s["library"]))
+            if rules:
+                say(f"Using {len(rules)} of your rules from {default_path(s['library'])}")
+            counts = plan(con, s["library"], split_at=int(s["split_at"]), rules=rules, progress=say)
+            report(con, s["report"], progress=say)
+            return counts
+        finally:
+            con.close()  # a step that fails must not keep the catalog locked
 
     def do_apply(say):
         con = connect(s["db"])
