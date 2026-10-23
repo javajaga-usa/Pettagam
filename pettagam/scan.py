@@ -29,13 +29,21 @@ def walk(root: str):
                 continue
 
 
+def _sqlite_int(n: int) -> int:
+    """A device or inode number as SQLite can store it. SQLite integers are signed 64-bit, but some drivers
+    hand out numbers past 2**63 (macOS's FSKit exFAT driver gives some files inodes just under 2**64), so
+    those wrap around to negative. Every number still maps to exactly one stored value, so files that share
+    an inode still match each other."""
+    return n - (1 << 64) if n >= 1 << 63 else n
+
+
 def _examine(root: str, rel: str, st) -> tuple:
     name = os.path.basename(rel)
     junk = cl.is_junk(name, st.st_size)
     s = None if junk else sniff_file(os.path.join(root, rel))
     name_ext = cl.normalize_ext(name)
     ext = cl.effective_ext(name_ext, s.kind if s else None)
-    return (rel, name, st.st_size, st.st_mtime, st.st_dev, st.st_ino, ext,
+    return (rel, name, st.st_size, st.st_mtime, _sqlite_int(st.st_dev), _sqlite_int(st.st_ino), ext,
             s.kind if s else None, s.width if s else None, s.height if s else None,
             s.camera if s else None, int(bool(s and s.has_exif)), int(bool(s and s.has_tags)), junk,
             s.taken if s else None)
@@ -65,6 +73,16 @@ def scan(con, source: str, workers: int = 2, progress=print) -> int:
     if not os.path.isdir(source):
         raise SystemExit(f"Source folder not found: {source}")
     set_meta(con, "source", source)
+    try:
+        return _scan(con, source, workers, progress)
+    except BaseException:
+        # Drop the unfinished batch and let go of the write lock, so a failed scan doesn't leave the catalog
+        # locked for the panel and the command line ("database is locked"). Run the scan again to finish it.
+        con.rollback()
+        raise
+
+
+def _scan(con, source: str, workers: int, progress) -> int:
     # Keep AI tags across a fresh scan: they are matched back by path, size and date.
     kept = {(r["path"], r["size"], r["mtime"]): (r["tags"], r["description"]) for r in con.execute(
         "SELECT path, size, mtime, tags, description FROM files WHERE tags IS NOT NULL")}

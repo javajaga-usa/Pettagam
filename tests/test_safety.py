@@ -306,3 +306,41 @@ def test_panel_tls_needs_both_files(tmp_path, monkeypatch):  # SEC-10
         panel.serve("0.0.0.0", 0, open_browser=False, cert=str(tmp_path / "c.pem"))
     with pytest.raises(SystemExit, match="certificate"):
         panel.tls_context(str(tmp_path / "missing.pem"), str(tmp_path / "missing.key"))
+
+
+def test_scan_stores_inode_numbers_past_sqlite_range(tmp_path, monkeypatch):  # PLAT-8, REL-3
+    """macOS's FSKit exFAT driver gives some files inodes just under 2**64, past SQLite's signed integers."""
+    import sqlite3
+    import types
+
+    from pettagam import scan as sc
+    from pettagam.db import connect
+    src = tmp_path / "old"
+    write(str(src), "a.txt", b"one")
+    write(str(src), "b.txt", b"two")
+    write(str(src), "c.txt", b"three")
+    real = sc._examine
+    huge = {"a.txt": 2**64 - 1296, "b.txt": 2**64 - 1296, "c.txt": 2**63}
+
+    def examine(root, rel, st):  # the stat numbers such a drive reports
+        return real(root, rel, types.SimpleNamespace(st_size=st.st_size, st_mtime=st.st_mtime, st_dev=2**64 - 1,
+                                                     st_ino=huge[rel]))
+    monkeypatch.setattr(sc, "_examine", examine)
+    con = connect(str(tmp_path / "p.db"))
+    assert sc.scan(con, str(src), progress=quiet) == 3
+    rows = dict(con.execute("SELECT name, ino FROM files").fetchall())
+    assert rows == {"a.txt": -1296, "b.txt": -1296, "c.txt": -(2**63)}
+    # Two names for one file (a hardlink) still share one inode, so they still count as one.
+    assert con.execute("SELECT COUNT(*) FROM (SELECT 1 FROM files GROUP BY dev, ino)").fetchone()[0] == 2
+
+    # A scan that fails part-way lets go of the catalog instead of keeping it locked.
+    def boom(root, d):
+        raise OverflowError("cannot store")
+    monkeypatch.setattr(sc, "_scan_dir", boom)
+    with pytest.raises(OverflowError):
+        sc.scan(con, str(src), progress=quiet)
+    assert not con.in_transaction
+    other = sqlite3.connect(str(tmp_path / "p.db"), timeout=0.1)
+    other.execute("INSERT INTO meta(key, value) VALUES('probe', '1')")
+    other.commit()
+    assert con.execute("SELECT COUNT(*) FROM files").fetchone()[0] == 3  # nothing was committed yet

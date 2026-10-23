@@ -4,7 +4,7 @@
 | --- | --- |
 | Document | Software requirements specification |
 | Product | Pettagam (பெட்டகம், "strongbox") |
-| Version | 1.3, covering Pettagam 0.6.0 |
+| Version | 1.4, covering Pettagam 0.6.1 |
 | Date | 2026-10-23 |
 | Owner | Jagadeesh (javajaga-usa) |
 | Status | Baseline. Changes go through a pull request that updates this file, the code and the tests together. |
@@ -328,6 +328,7 @@ Threat model: Pettagam runs as the owner on their own computer. The panel is a w
 | --- | --- | --- |
 | REL-1 | Every long step (scan, apply, inbox, tag, fixity) shall be safe to interrupt and run again. | `test_pipeline.py::test_apply_link_and_verify`, `test_library.py::test_fixity_slices_and_missing` |
 | REL-2 | One unreadable file shall be recorded as an error and shall not stop the others. | `test_pipeline.py::test_existing_different_file_is_never_overwritten` |
+| REL-3 | A scan that fails part-way shall release the catalog (roll back its unfinished batch and, in the panel, close its connection), so the panel and the command line are not left with "database is locked". | `scan.py`, `panel.py` | `test_safety.py::test_scan_stores_inode_numbers_past_sqlite_range` |
 | PERF-1 | The scan should examine at least 1,000 files per second on the N300 Pro with 2 workers and the catalog on the SSD. | `pettagam bench` (FR-BENCH-1); N300 number still to record (gap G-12) |
 | PERF-2 | Hardlink placement should run at least 2,000 files per second on the same drive. | `pettagam bench`; N300 number still to record (gap G-12) |
 | PERF-3 | Duplicate detection shall read in full only files that share both size and a 64 KB sample with another file. | `test_library.py::test_stats_and_duplicates` |
@@ -384,6 +385,7 @@ Upper bounds stop a future major version of an optional library from breaking Pe
 | PLAT-5 | Paths shall be valid on Windows/Samba clients (no `\ / : * ? " < > |` or control characters in names), so the library can be shared from the Ubuntu server. |
 | PLAT-7 | Pettagam shall require Python 3.13 or newer and say so clearly on an older one. The setup scripts shall find a new enough Python (also where python.org and Homebrew install it, which a double-clicked app can't see on its PATH), and Pettagam shall run from its own `.venv` so the app, the command and the background job use that Python whatever else is installed. The minimum shall be stated the same way in every place. Verified by `test_requirements.py::test_python_minimum_is_the_same_everywhere`, `test_launchers.py::test_python_finder_needs_3_13_and_prefers_the_venv`. A background job set up with an older Python shall be moved to the new one by setup (`pettagam service refresh`), and the health check shall flag one that still uses an old Python: `test_maintenance.py::test_service_refresh_moves_the_job_to_this_python`, `test_maintenance.py::test_doctor_flags_a_background_job_on_an_old_python`. |
 | PLAT-6 | Ubuntu can't write to APFS. Moving the library to Ubuntu means copying it to an ext4 drive with hardlinks preserved (`rsync -aH`, or the library alone if the old files stay on the Mac) and then running `relocate`. The README describes this. |
+| PLAT-8 | Scanning shall work on drives whose driver reports device or inode numbers of 2^63 or more (macOS's FSKit exFAT driver gives some files inodes just under 2^64). They are stored wrapped into SQLite's signed 64-bit range, one stored value per number, so hardlinked names still match. | `scan.py` | `test_safety.py::test_scan_stores_inode_numbers_past_sqlite_range` |
 
 ## 8. Constraints, assumptions and out of scope
 
