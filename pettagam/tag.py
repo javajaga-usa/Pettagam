@@ -16,6 +16,8 @@ import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 
+from .progress import stop_if_asked
+
 MODEL = "claude-opus-5-5"
 MAX_IMAGE = 5 * 1024 * 1024    # the API's per-image limit
 MAX_PDF = 20 * 1024 * 1024
@@ -192,21 +194,27 @@ def tag_library(con, library: str, tagger=None, workers: int = 4, limit: int = 0
 
     t0, tagged, skipped, errors = time.time(), 0, 0, 0
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        for i, (r, res, err) in enumerate(pool.map(one, rows), 1):
-            table, fid, dest, _ = r
-            tags = clean_tags(res.get("tags")) if res else []
-            if tags:
-                con.execute(f"UPDATE {table} SET tags=?, description=? WHERE id=?",
-                            (",".join(tags), str(res.get("description") or "")[:300], fid))
-                tagged += 1
-            elif err and err.startswith("can't be sent"):
-                skipped += 1
-            else:
-                errors += 1
-                progress(f"  {dest}: {err or 'no tags returned'}")
-            if i % 50 == 0:
-                con.commit()
-                progress(f"  {i:,}/{len(rows):,} done ({i / (time.time() - t0):.1f}/s)")
+        try:
+            for i, (r, res, err) in enumerate(pool.map(one, rows), 1):
+                stop_if_asked(progress)
+                table, fid, dest, _ = r
+                tags = clean_tags(res.get("tags")) if res else []
+                if tags:
+                    con.execute(f"UPDATE {table} SET tags=?, description=? WHERE id=?",
+                                (",".join(tags), str(res.get("description") or "")[:300], fid))
+                    tagged += 1
+                elif err and err.startswith("can't be sent"):
+                    skipped += 1
+                else:
+                    errors += 1
+                    progress(f"  {dest}: {err or 'no tags returned'}")
+                if i % 50 == 0:
+                    con.commit()
+                    progress(f"  {i:,}/{len(rows):,} done ({i / (time.time() - t0):.1f}/s)")
+        except BaseException:
+            pool.shutdown(wait=False, cancel_futures=True)  # stopping: send nothing more (and pay for nothing more)
+            con.commit()
+            raise
     con.commit()
     progress(f"Tagged {tagged:,} files, skipped {skipped:,}, {errors:,} errors")
     return {"tagged": tagged, "skipped": skipped, "errors": errors}

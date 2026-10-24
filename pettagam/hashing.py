@@ -53,6 +53,22 @@ def _counting(results, total: int, verb: str, progress):
         yield r
 
 
+def _hash_all(con, pool, root, same_size, base, progress) -> None:
+    for fid, h in _counting(_run(pool, root, same_size, SAMPLE), len(same_size), "sampled", progress):
+        con.execute("UPDATE files SET quick_hash=? WHERE id=?", (h, fid))
+    con.commit()
+    # A file no bigger than the sample was read in full already.
+    con.execute(f"UPDATE files SET full_hash=quick_hash WHERE size <= {SAMPLE} AND quick_hash IS NOT NULL")
+    candidates = con.execute(
+        f"SELECT id, path FROM files WHERE size > {SAMPLE} AND {base} AND quick_hash IS NOT NULL AND (size, quick_hash) IN "
+        f"(SELECT size, quick_hash FROM files WHERE quick_hash IS NOT NULL GROUP BY size, quick_hash "
+        f"HAVING COUNT(*) > 1)").fetchall()
+    progress(f"  {len(candidates):,} candidates after sampling; hashing them in full ({ALGO})")
+    for fid, h in _counting(_run(pool, root, candidates, 0), len(candidates), "hashed", progress):
+        con.execute("UPDATE files SET full_hash=? WHERE id=?", (h, fid))
+    con.commit()
+
+
 def find_duplicates(con, workers: int = 2, progress=print) -> dict:
     root = get_meta(con, "source")
     con.execute("UPDATE files SET quick_hash=NULL, full_hash=NULL, dup_of=NULL")
@@ -62,19 +78,11 @@ def find_duplicates(con, workers: int = 2, progress=print) -> dict:
         f"(SELECT size FROM files WHERE {base} GROUP BY size HAVING COUNT(*) > 1)").fetchall()
     progress(f"  {len(same_size):,} files share a size with another file; sampling them")
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        for fid, h in _counting(_run(pool, root, same_size, SAMPLE), len(same_size), "sampled", progress):
-            con.execute("UPDATE files SET quick_hash=? WHERE id=?", (h, fid))
-        con.commit()
-        # A file no bigger than the sample was read in full already.
-        con.execute(f"UPDATE files SET full_hash=quick_hash WHERE size <= {SAMPLE} AND quick_hash IS NOT NULL")
-        candidates = con.execute(
-            f"SELECT id, path FROM files WHERE size > {SAMPLE} AND {base} AND quick_hash IS NOT NULL AND (size, quick_hash) IN "
-            f"(SELECT size, quick_hash FROM files WHERE quick_hash IS NOT NULL GROUP BY size, quick_hash "
-            f"HAVING COUNT(*) > 1)").fetchall()
-        progress(f"  {len(candidates):,} candidates after sampling; hashing them in full ({ALGO})")
-        for fid, h in _counting(_run(pool, root, candidates, 0), len(candidates), "hashed", progress):
-            con.execute("UPDATE files SET full_hash=? WHERE id=?", (h, fid))
-        con.commit()
+        try:
+            _hash_all(con, pool, root, same_size, base, progress)
+        except BaseException:
+            pool.shutdown(wait=False, cancel_futures=True)  # stopping: don't read the files still queued
+            raise
 
     groups = con.execute(
         "SELECT full_hash FROM files WHERE full_hash IS NOT NULL GROUP BY full_hash, size HAVING COUNT(*) > 1").fetchall()

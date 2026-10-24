@@ -11,6 +11,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from .db import get_meta
+from .progress import stop_if_asked
 from .safeio import BUSY, durable_copy, library_lock
 
 
@@ -63,15 +64,26 @@ def _apply(con, source, library, workers, method, progress) -> dict:
         except OSError as e:
             return row["id"], "error", str(e)
 
+    from .scan import PROGRESS_EVERY
     t0, done, errors = time.time(), 0, 0
+    said = t0
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        for i, (fid, status, err) in enumerate(pool.map(one, todo), 1):
-            con.execute("UPDATE files SET status=?, method=?, error=? WHERE id=?", (status, method, err, fid))
-            done += status == "done"
-            errors += status == "error"
-            if i % 2000 == 0:
-                con.commit()
-                progress(f"  {i:,}/{len(todo):,} placed ({i / (time.time() - t0):,.0f}/s)")
+        try:
+            for i, (fid, status, err) in enumerate(pool.map(one, todo), 1):
+                con.execute("UPDATE files SET status=?, method=?, error=? WHERE id=?", (status, method, err, fid))
+                stop_if_asked(progress)
+                done += status == "done"
+                errors += status == "error"
+                if i % 2000 == 0 or time.time() - said >= PROGRESS_EVERY:
+                    con.commit()
+                    said = time.time()
+                    progress(f"  {i:,} of {len(todo):,} placed ({i / (time.time() - t0):,.0f}/s)")
+        except BaseException:
+            # Stopping: keep what is placed (running again carries on from there) and place nothing more.
+            pool.shutdown(wait=False, cancel_futures=True)
+            con.commit()
+            write_manifest(con, library)
+            raise
     con.commit()
     write_manifest(con, library)
     progress(f"Placed {done:,} files in {time.time() - t0:,.1f}s, {errors:,} errors")

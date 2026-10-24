@@ -2,11 +2,13 @@
 
 import os
 import re
+import time
 from collections import defaultdict
 
 from . import classify as cl
 from .db import get_meta, set_meta
 from .rules import facts, first_match
+from .scan import PROGRESS_EVERY
 
 BAD_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')  # not allowed by Windows/Samba clients
 SPLIT_AT = 5000
@@ -141,7 +143,11 @@ def plan(con, library: str, split_at: int = SPLIT_AT, rules=(), progress=print) 
     rows = con.execute(
         "SELECT * FROM files WHERE junk IS NULL AND dup_of IS NULL ORDER BY path").fetchall()
     by_rule = defaultdict(int)
-    for row in rows:
+    said = time.time()
+    for i, row in enumerate(rows, 1):
+        if time.time() - said >= PROGRESS_EVERY:
+            said = time.time()
+            progress(f"  planned {i:,} of {len(rows):,} files")
         r, folder, rule = decide(row, rules)
         con.execute("UPDATE files SET category=?, subtype=?, confidence=?, reason=?, rule=? WHERE id=?",
                     (r.category, r.subtype, r.confidence, r.reason, rule, row["id"]))

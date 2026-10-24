@@ -11,6 +11,8 @@ import time
 
 from .db import get_meta, set_meta
 from .hashing import hash_file
+from .progress import stop_if_asked
+from .scan import PROGRESS_EVERY
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS fixity (
@@ -47,7 +49,9 @@ def check(con, library: str = None, minutes: float = 0, limit: int = 0, progress
     deadline = time.time() + minutes * 60 if minutes else 0
     res = {"recorded": 0, "ok": 0, "damaged": [], "changed": [], "missing": [], "unreadable": [],
            "remaining": 0, "bytes": 0}
+    said = time.time()
     for i, dest in enumerate(order):
+        stop_if_asked(progress)
         if deadline and time.time() > deadline:
             res["remaining"] = len(order) - i
             break
@@ -82,8 +86,9 @@ def check(con, library: str = None, minutes: float = 0, limit: int = 0, progress
         else:
             con.execute("INSERT OR REPLACE INTO fixity VALUES (?,?,?,?,?,?)",
                         (dest, h, st.st_size, st.st_mtime, now, status))
-        if (i + 1) % 500 == 0:
+        if (i + 1) % 500 == 0 or time.time() - said >= PROGRESS_EVERY:
             con.commit()
+            said = time.time()
             progress(f"  {i + 1:,} of {len(order):,} files read")
     con.commit()
     set_meta(con, "fixity_last", time.time())

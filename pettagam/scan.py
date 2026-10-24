@@ -5,7 +5,7 @@ import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
 from . import classify as cl
-from .db import set_meta
+from .db import get_meta, set_meta
 from .sniff import sniff_file
 
 PROGRESS_EVERY = 10  # seconds between progress lines in long steps
@@ -88,6 +88,8 @@ def _scan(con, source: str, workers: int, progress) -> int:
     # Keep AI tags across a fresh scan: they are matched back by path, size and date.
     kept = {(r["path"], r["size"], r["mtime"]): (r["tags"], r["description"]) for r in con.execute(
         "SELECT path, size, mtime, tags, description FROM files WHERE tags IS NOT NULL")}
+    # The last scan of this folder says roughly how many files to expect, for the percentage and time left.
+    expect = int(get_meta(con, "scan_count") or 0) if get_meta(con, "scan_source") == source else 0
     con.execute("DELETE FROM files")
     t0, n, last = time.time(), 0, 0
     said = t0
@@ -97,24 +99,32 @@ def _scan(con, source: str, workers: int, progress) -> int:
     # which is what helps on hard drives and network shares.
     with ThreadPoolExecutor(max_workers=workers) as pool:
         pending = {pool.submit(_scan_dir, source, source)}
-        while pending:
-            done, pending = wait(pending, return_when=FIRST_COMPLETED)
-            for fut in done:
-                rows, subdirs = fut.result()
-                pending |= {pool.submit(_scan_dir, source, d) for d in subdirs}
-                if rows:
-                    con.executemany(sql, rows)
-                    n += len(rows)
-            # Say how far it got every 10 seconds, so a slow drive doesn't look stuck; save every 20,000 files.
-            if n - last >= 20000 or time.time() - said >= PROGRESS_EVERY:
-                con.commit()
-                last, said = n, time.time()
-                progress(f"  scanned {n:,} files ({n / (time.time() - t0):,.0f}/s), {len(pending):,} folders still to read")
+        try:
+            while pending:
+                done, pending = wait(pending, return_when=FIRST_COMPLETED)
+                for fut in done:
+                    rows, subdirs = fut.result()
+                    pending |= {pool.submit(_scan_dir, source, d) for d in subdirs}
+                    if rows:
+                        con.executemany(sql, rows)
+                        n += len(rows)
+                # Say how far it got every 10 seconds, so a slow drive doesn't look stuck; save every 20,000 files.
+                if n - last >= 20000 or time.time() - said >= PROGRESS_EVERY:
+                    con.commit()
+                    last, said = n, time.time()
+                    of = f" of about {expect:,}" if expect else ""
+                    progress(f"  scanned {n:,}{of} files ({n / (time.time() - t0):,.0f}/s), "
+                             f"{len(pending):,} folders still to read")
+        except BaseException:
+            pool.shutdown(wait=False, cancel_futures=True)  # stopping: don't read the folders still queued
+            raise
     con.commit()
     if kept:
         con.executemany("UPDATE files SET tags=?, description=? WHERE path=? AND size=? AND mtime=?",
                         [(t, d, p, sz, m) for (p, sz, m), (t, d) in kept.items()])
         con.commit()
     set_meta(con, "scanned_at", time.time())
+    set_meta(con, "scan_source", source)
+    set_meta(con, "scan_count", n)
     progress(f"Scanned {n:,} files in {time.time() - t0:,.1f}s")
     return n
