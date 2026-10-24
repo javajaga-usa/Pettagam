@@ -10,7 +10,7 @@ import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-from .db import get_meta
+from .db import get_meta, set_meta
 from .progress import stop_if_asked
 from .safeio import BUSY, durable_copy, library_lock
 
@@ -85,6 +85,7 @@ def _apply(con, source, library, workers, method, progress) -> dict:
             write_manifest(con, library)
             raise
     con.commit()
+    set_meta(con, "applied_at", time.time())
     write_manifest(con, library)
     progress(f"Placed {done:,} files in {time.time() - t0:,.1f}s, {errors:,} errors")
     return {"done": done, "errors": errors, "method": method}

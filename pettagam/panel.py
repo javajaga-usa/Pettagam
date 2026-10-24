@@ -6,6 +6,7 @@ every request needs the secret token from the start-up link.
 """
 
 import contextlib
+import errno
 import hashlib
 import json
 import mimetypes
@@ -24,11 +25,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 from urllib.parse import parse_qs, urlparse, urlsplit
 
-from . import library
+from . import __version__, library
 from .apply import apply
 from .db import connect as _connect, get_meta
+from .errors import explain, is_bug, save_details
 from .hashing import find_duplicates
 from .plan import SPLIT_AT, plan
+from .progress import Progress, Stopped, keep_awake
 from .report import report
 from .rules import default_path, load_rules
 from .safeio import private_dir
@@ -117,6 +120,21 @@ def more_open_files(want: int = 10240) -> None:
         pass
 
 
+STEP_NAMES = {"dryrun": "Dry run", "apply": "Placing files", "verify": "Sync check", "inbox": "Sorting the inbox",
+              "views": "Building views", "tag": "AI tagging", "undo": "Undo", "fixity": "Damage check",
+              "bench": "Measuring speed"}
+# What stopping part-way leaves behind, said in the log.
+STOPPED_NOTES = {
+    "dryrun": "The dry run was stopped before it finished, so the plan is incomplete. Start it again when you're ready.",
+    "apply": "Files placed so far are kept. Place files again to carry on where it stopped.",
+    "verify": "The sync check was stopped before it finished. Nothing was changed.",
+    "tag": "Tags added so far are kept, and nothing more is sent. Add AI tags again to carry on.",
+    "fixity": "Files checked so far are recorded. Check for damage again to carry on.",
+    "inbox": "Files filed so far stay in the library; the rest are still in the inbox.",
+}
+NOTIFY_AFTER = 60  # seconds: a step that ran longer says on the desktop when it ends
+
+
 class Job:
     """One step at a time, run in the background, with a log the page polls."""
 
@@ -127,6 +145,7 @@ class Job:
         self.log: list[str] = []
         self.started = self.finished = None
         self.result = None
+        self.progress = None
 
     def say(self, msg: str) -> None:
         with self.lock:
@@ -140,28 +159,62 @@ class Job:
             self.name, self.running, self.log = name, True, []
             self.started, self.finished, self.result = time.time(), None, None
 
+        self.progress = Progress(sink=self.say)
+
         def run():
             try:
-                self.result = fn(self.say)
+                with keep_awake():
+                    self.result = fn(self.progress)
                 self.say("Finished.")
+            except Stopped:
+                self.result = {"stopped": True}
+                self.say("Stopped. " + STOPPED_NOTES.get(name, ""))
             except SystemExit as e:
                 self.result = {"error": str(e)}
                 self.say(f"Stopped: {e}")
             except Exception as e:  # report anything to the page instead of dying silently
-                self.result = {"error": repr(e)}
-                self.say(f"Error: {e!r}")
+                self.result = {"error": explain(e)}
+                self.say(f"Error: {explain(e)}")
+                if is_bug(e):
+                    where = save_details(e, f"panel step: {name}")
+                    self.say(f"This looks like a bug in Pettagam. The details are in {where}." if where
+                             else f"Details: {e!r}")
             finally:
                 close_connections()
                 with self.lock:
                     self.running, self.finished = False, time.time()
+                self._tell_desktop()
 
         threading.Thread(target=run, daemon=True).start()
         return True
 
+    def stop(self) -> bool:
+        """Ask the running step to stop at its next progress line (within about 10 seconds)."""
+        with self.lock:
+            if not self.running or not self.progress:
+                return False
+            self.progress.stop()
+            self.log.append(f"{time.strftime('%H:%M:%S')}  Stopping…")
+            return True
+
+    def _tell_desktop(self) -> None:
+        """After a long step, a desktop notification, so nobody has to keep watching the page."""
+        if not (self.started and self.finished and self.finished - self.started >= NOTIFY_AFTER):
+            return
+        from .notify import notify
+        r, step = self.result or {}, STEP_NAMES.get(self.name, self.name)
+        text = (f"{step} stopped." if r.get("stopped") else f"{step} failed: {r['error']}" if r.get("error")
+                else f"{step} finished.")
+        notify("Pettagam", text[:200])
+
     def snapshot(self) -> dict:
         with self.lock:
+            prog = self.progress
             return {"name": self.name, "running": self.running, "log": list(self.log),
-                    "started": self.started, "finished": self.finished, "result": self.result}
+                    "started": self.started, "finished": self.finished, "result": self.result,
+                    "percent": prog.percent if prog and self.running else None,
+                    "eta": prog.eta if prog and self.running else None,
+                    "stopping": bool(prog and self.running and prog.stop_event.is_set())}
 
 
 JOB = Job()
@@ -241,6 +294,43 @@ def _steps(action: str, s: dict):
         return result
 
     return with_backup
+
+
+# --- Updating and restarting ------------------------------------------------------
+
+RESTART: list = []  # how this panel was started, so it can start itself again (set by serve)
+STARTED = {"stamp": 0.0}  # when the newest Pettagam file was changed, as the panel started
+UPDATE_CHECK: dict = {}  # the last look for updates on GitHub, kept for an hour
+UPDATE_EVERY = 3600
+
+
+def app_state() -> dict:
+    """The running version, and whether newer code is on disk (after a git pull) so a restart would use it."""
+    from . import update
+    on_disk = update.version_on_disk()
+    newer = bool(STARTED["stamp"]) and update.code_stamp() > STARTED["stamp"] + 1
+    return {"version": __version__, "on_disk": on_disk or __version__, "restart_needed": newer,
+            "can_restart": bool(RESTART), "update": UPDATE_CHECK.get("result"), "platform": sys.platform}
+
+
+def update_check(force: bool = False) -> dict:
+    from . import update
+    if force or not UPDATE_CHECK or time.time() - UPDATE_CHECK["at"] > UPDATE_EVERY:
+        UPDATE_CHECK.update(at=time.time(), result=update.check())
+    return UPDATE_CHECK["result"]
+
+
+def restart_soon(delay: float = 0.5) -> None:
+    """Start this panel again in the same process and Terminal window, after the reply has gone out."""
+    def again():
+        time.sleep(delay)
+        from .update import CODE
+        print("\nRestarting the panel with the updated Pettagam…", flush=True)
+        env = dict(os.environ)
+        env["PYTHONPATH"] = CODE + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+        os.execve(sys.executable, [sys.executable, "-m", "pettagam", *RESTART], env)  # the server's socket closes on exec
+
+    threading.Thread(target=again, daemon=True).start()
 
 
 MAX_SELECTED = 100_000  # files changed by one bulk tag edit
@@ -480,9 +570,14 @@ def summary(s: dict) -> dict:
         "GROUP BY folder ORDER BY folder")]
     placed = q("SELECT COUNT(*) FROM files WHERE action='place' AND status='done'")[0][0]
     errors = q("SELECT COUNT(*) FROM files WHERE status='error'")[0][0]
+    try:
+        verified = json.loads(get_meta(con, "verified") or "{}")
+    except ValueError:
+        verified = {}
     return {"planned": True, "source": get_meta(con, "source"), "library": get_meta(con, "library"),
             "total": total, "bytes": size, "actions": actions, "folders": folders,
-            "placed": placed, "errors": errors}
+            "placed": placed, "errors": errors, "verified": verified,
+            "applied_at": float(get_meta(con, "applied_at") or 0)}
 
 
 def plan_rows(s: dict, query: str, folder: str, limit: int = 200) -> list:
@@ -626,6 +721,8 @@ class Handler(BaseHTTPRequestHandler):
     def _get(self):
         u = urlparse(self.path)
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
+        if u.path == "/api/hello":  # lets a second start find this panel instead of failing; says nothing else
+            return self._send(200, {"app": "pettagam", "version": __version__})
         if not self._authorized(q):
             return self._send(403, "Open the panel with the link printed when it started.", "text/plain")
         s = load_settings()
@@ -634,7 +731,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, html, "text/html", cookie=True)
         if u.path == "/api/state":
             return self._send(200, {"settings": s, "job": JOB.snapshot(), "summary": summary(s),
-                                    "local": not self.token})
+                                    "local": not self.token, "app": app_state()})
+        if u.path == "/api/update":
+            if self.token:
+                return self._send(403, {"error": "Only from the computer running the panel."})
+            return self._send(200, update_check(force=q.get("force") == "1"))
         if u.path == "/api/browse":
             return self._send(200, browse(q.get("path", "")))
         if u.path == "/api/plan":
@@ -744,6 +845,27 @@ class Handler(BaseHTTPRequestHandler):
             if self.token:  # the file manager would open on the computer running the panel, not the viewer's
                 return self._send(403, {"error": "Only from the computer running the panel."})
             return self._send(*reveal(s, str(body.get("path", ""))))
+        if u.path == "/api/stop":
+            return self._send(200, {"stopping": JOB.stop()})
+        if u.path in ("/api/update", "/api/restart"):
+            if self.token:
+                return self._send(403, {"error": "Only from the computer running the panel."})
+            if JOB.running:
+                return self._send(409, {"error": "Wait for the current step to finish (or stop it) first."})
+            res = {}
+            if u.path == "/api/update":
+                from . import update
+                try:
+                    res = update.update()
+                except SystemExit as e:
+                    return self._send(400, {"error": str(e)})
+                UPDATE_CHECK.clear()
+                if not res["updated"]:
+                    return self._send(200, res)
+            if not RESTART:
+                return self._send(400, {"error": "Close the panel's Terminal window and open Pettagam again."})
+            restart_soon()
+            return self._send(200, {**res, "restarting": True})
         if u.path == "/api/run":
             action = body.get("action")
             if action not in ("dryrun", "apply", "verify", "inbox", "views", "tag", "undo", "fixity", "bench"):
@@ -831,6 +953,17 @@ class TLSServer(ThreadingHTTPServer):
             conn.close()
 
 
+def already_running(scheme: str, port: int) -> bool:
+    """Is a Pettagam panel answering on this port? (A second double-click should open it, not fail.)"""
+    import urllib.request
+    ctx = ssl._create_unverified_context() if scheme == "https" else None  # our own certificate, on this computer
+    try:
+        with urllib.request.urlopen(f"{scheme}://127.0.0.1:{port}/api/hello", timeout=3, context=ctx) as r:
+            return json.loads(r.read()).get("app") == "pettagam"
+    except (OSError, ValueError):
+        return False
+
+
 def make_server(host: str, port: int, cert: str = None, key: str = None):
     if not cert:
         return ThreadingHTTPServer((host, port), Handler)
@@ -850,9 +983,25 @@ def serve(host: str = "127.0.0.1", port: int = 8484, open_browser: bool = True, 
     if tls and not cert:
         cert, key = self_signed()
     Handler.secure = bool(cert)
-    httpd = make_server(host, port, cert, key)
-    name = "localhost" if local or host == "0.0.0.0" else host
     scheme = "https" if cert else "http"
+    try:
+        httpd = make_server(host, port, cert, key)
+    except OSError as e:
+        if e.errno != errno.EADDRINUSE:
+            raise
+        if already_running(scheme, port):
+            url = f"{scheme}://localhost:{port}/"
+            print(f"Pettagam is already open at {url}" + (" — opening it in your browser." if open_browser else ""))
+            if open_browser and local:
+                webbrowser.open(url)
+            return
+        raise SystemExit(f"Another program is using port {port}. Start the panel on another one, for example: "
+                         f"pettagam panel --port {port + 1}") from None
+    from . import update
+    STARTED["stamp"] = update.code_stamp()
+    RESTART[:] = ["panel", "--no-browser", "--host", host, "--port", str(port)] + (
+        ["--tls-cert", cert, "--tls-key", key] if cert else [])
+    name = "localhost" if local or host == "0.0.0.0" else host
     url = f"{scheme}://{name}:{port}/" + ("" if local else f"?token={Handler.token}")
     print(f"Pettagam panel running at {url}  (press Ctrl+C to stop)")
     if not local:
