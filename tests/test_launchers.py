@@ -91,3 +91,11 @@ def test_icon_is_drawn(tmp_path):
     subprocess.run([sys.executable, os.path.join(ROOT, "launchers", "make_icon.py"), str(tmp_path)], check=True)
     data = (tmp_path / "icon_16x16.png").read_bytes()
     assert data.startswith(b"\x89PNG") and len(os.listdir(tmp_path)) == 12
+
+
+def test_update_launcher_explains_when_it_cannot_update(tmp_path):  # USE-13
+    root = copy_of_repo(tmp_path)  # a copy without .git, like a downloaded zip
+    r = run("Update Pettagam.command", tmp_path / "home", root)
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert "wasn't downloaded with git" in r.stdout + r.stderr
+    assert "Traceback" not in r.stdout + r.stderr

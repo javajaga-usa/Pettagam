@@ -71,7 +71,7 @@ def check(code: str = CODE, fetch: bool = True) -> dict:
     behind = _git(code, "rev-list", "--count", "HEAD..@{u}").stdout.strip()
     out["behind"] = int(behind) if behind.isdigit() else 0
     if out["behind"]:
-        out["changes"] = _lines(_git(code, "log", "--format=%s", f"-{MAX_CHANGES}", "HEAD..@{u}").stdout)
+        out["changes"] = _lines(_git(code, "log", "--no-merges", "--format=%s", f"-{MAX_CHANGES}", "HEAD..@{u}").stdout)
     return out
 
 
@@ -93,7 +93,7 @@ def update(code: str = CODE) -> dict:
             raise SystemExit("Could not reach GitHub. Check the internet connection and try again. Nothing was changed.")
         raise SystemExit("Could not update: " + (_lines(r.stderr or r.stdout) or ["git pull failed"])[-1])
     after = _git(code, "rev-parse", "HEAD").stdout.strip()
-    changes = _lines(_git(code, "log", "--format=%s", f"-{MAX_CHANGES}", f"{before}..{after}").stdout) if before != after else []
+    changes = _lines(_git(code, "log", "--no-merges", "--format=%s", f"-{MAX_CHANGES}", f"{before}..{after}").stdout) if before != after else []
     files = _lines(_git(code, "diff", "--name-only", before, after).stdout) if before != after else []
     return {"updated": before != after, "changes": changes, "version": version_on_disk(os.path.join(code, "pettagam")),
             # The app in Applications is built by setup from the launchers, so a change there needs setup again.

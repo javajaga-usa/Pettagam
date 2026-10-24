@@ -4,6 +4,30 @@ All notable changes to Pettagam. Versions follow [semantic versioning](https://s
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-24
+
+Easier to use from start to finish.
+
+### Added
+- **The panel says what to do next.** A line at the top of the Organize tab always names the one next step: choose folders, start the dry run, look over the plan and place the files, place the rest, check everything is in sync, or all done.
+- **Percent done and time left** for long steps, in the panel (with a progress bar, and in the browser tab's title) and on the command line. A dry run of a drive scanned before expects as many files as last time, so even the scan shows a percentage.
+- **Stop** button for the running step (Ctrl+C on the command line). Placing and AI tagging keep what they finished and carry on next time; tagging sends nothing more once stopped.
+- **The Mac stays awake** while a step runs, and a step that took more than a minute ends with a desktop notification, so a 50-minute dry run can be left alone.
+- **Updating without the Terminal**: when a new version is on GitHub the panel says so and **Update and restart** installs it. `Update Pettagam.command` and `pettagam update` do the same and restart a running panel. After an update by any other means (git pull, GitHub Desktop) the panel offers **Restart now**, so it no longer needs restarting by hand.
+- `pettagam` on its own shows how to start and where the catalog has got to; **`pettagam status`** names the next step. Dry run, apply and verify each end by naming the next step.
+- **When something goes wrong** section in the README, with what to do about each common problem.
+
+### Changed
+- `pettagam --help` lists the commands in groups, in the order they're used, and a mistyped command gets a suggestion ("Did you mean: pettagam apply").
+- Problems are explained in plain words with what to do (drive unplugged, disk full, macOS refusing access, catalog busy, drive failing) instead of a Python error. Anything unexpected is called a bug, with its details saved in `~/.pettagam/last-error.txt` for reporting.
+- Opening Pettagam while the panel is already running opens the running panel instead of failing with "address already in use".
+- Planning, placing, the sync check and the damage check report progress at least every 10 seconds.
+
+### Fixed
+- `pettagam apply` with nothing planned asked "Place 0 files?"; it now says to run a dry run first (or that everything is already placed).
+- `pettagam verify` before any dry run said "everything is in sync"; it now says there is nothing to check yet.
+- A question asked with nobody to answer (from a script) crashed with `EOFError`; it now counts as no and says to use `--yes`.
+
 ## [0.6.3] - 2026-10-23
 
 ### Fixed

@@ -1018,4 +1018,4 @@ def serve(host: str = "127.0.0.1", port: int = 8484, open_browser: bool = True, 
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
-        print("\nStopped.")
+        print("\nThe panel has stopped. You can close this window.")
