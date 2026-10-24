@@ -28,6 +28,7 @@ catalog in ~/.pettagam/pettagam.db, so the panel and the command line share one 
 """
 
 import argparse
+import contextlib
 import json
 import os
 import sqlite3
@@ -56,12 +57,142 @@ def default_db() -> str:
     return older if os.path.exists(older) and not os.path.exists(shared) else shared
 
 
+# How `pettagam --help` groups the commands. Every command is in exactly one group (a test checks).
+GROUPS = [
+    ("Start here", ["panel", "status", "doctor"]),
+    ("Organize the old files (in this order)", ["dryrun", "apply", "verify", "undo"]),
+    ("Keep the library tidy", ["inbox", "service", "rules", "views", "tags", "tag", "fixity"]),
+    ("Find things", ["find", "folders", "stats", "duplicates", "export"]),
+    ("Pettagam itself, and moving", ["update", "bench", "move-plan", "relocate"]),
+    ("The dry run's two halves, for scripts", ["scan", "plan"]),
+]
+# Steps that can run for a long time: they show percent and time left, and keep a Mac awake.
+LONG = {"scan", "dryrun", "plan", "apply", "verify", "tag", "fixity", "undo", "bench"}
+
+
+class Parser(argparse.ArgumentParser):
+    """argparse, with a 'did you mean' instead of a list of every command when one is mistyped."""
+
+    def error(self, message):
+        import difflib
+        bad = message.split("invalid choice: ", 1)[1].split("'")[1] if "invalid choice: '" in message else None
+        if bad is not None and self.prog == "pettagam":
+            names = [n for _, group in GROUPS for n in group]
+            close = difflib.get_close_matches(bad, names, n=1)
+            hint = f" Did you mean: pettagam {close[0]}" if close else ""
+            self.exit(2, f"pettagam: '{bad}' isn't a Pettagam command.{hint}\nSee every command with: pettagam --help\n")
+        super().error(message)
+
+
+def _grouped(summaries: dict) -> str:
+    lines = []
+    for title, names in GROUPS:
+        lines.append(f"{title}:")
+        lines += [f"  {n:<12}{summaries[n]}" for n in names]
+        lines.append("")
+    lines.append("Add -h after a command for its options, e.g. pettagam dryrun -h")
+    return "\n".join(lines)
+
+
+def welcome(db: str) -> str:
+    """What `pettagam` on its own prints: how to start, and where this catalog has got to."""
+    text = [f"Pettagam {__version__}: turns a messy folder into a tidy library. Your old files are never changed.", "",
+            "The easiest way is the panel, in your browser:", "  pettagam panel", "",
+            "Or from here, one step at a time:",
+            '  pettagam dryrun "/Volumes/Drive/Old files" --library "/Volumes/Drive/Pettagam"   (changes nothing)',
+            "  pettagam apply              place the files into the library",
+            "  pettagam verify --rescan    prove every file made it", ""]
+    if os.path.exists(db):
+        con = connect(db)
+        try:
+            text += [status_text(con), ""]
+        finally:
+            con.close()
+    text.append("Every command: pettagam --help")
+    return "\n".join(text)
+
+
+def status_text(con) -> str:
+    """Where the catalog has got to, and the one thing to do next."""
+    source, library = get_meta(con, "source"), get_meta(con, "library")
+    counts = dict(con.execute("SELECT COALESCE(action, 'unplanned'), COUNT(*) FROM files GROUP BY 1").fetchall())
+    if not sum(counts.values()):
+        return "Nothing scanned yet. Next: pettagam dryrun OLD-FILES --library LIBRARY (or use the panel)."
+    placed = con.execute("SELECT COUNT(*) FROM files WHERE action='place' AND status='done'").fetchone()[0]
+    errors = con.execute("SELECT COUNT(*) FROM files WHERE status='error'").fetchone()[0]
+    to_place = counts.get("place", 0)
+    lines = [f"Old files: {source}", f"Library:   {library or '(not planned yet)'}",
+             f"Planned:   {to_place:,} to place, {counts.get('duplicate', 0):,} duplicates, "
+             f"{counts.get('skip', 0):,} junk skipped",
+             f"Placed:    {placed:,} of {to_place:,}" + (f" ({errors:,} could not be placed)" if errors else "")]
+    try:
+        verified = json.loads(get_meta(con, "verified") or "{}")
+    except ValueError:
+        verified = {}
+    stale = verified.get("at", 0) < float(get_meta(con, "applied_at") or 0)
+    if not library:
+        nxt = "pettagam plan --library LIBRARY (or run the dry run again)"
+    elif placed < to_place:
+        nxt = ("review the plan (the report, or the panel), then: pettagam apply" if not placed
+               else "pettagam apply, to place the rest (it carries on where it stopped)")
+    elif not verified or stale:
+        nxt = "pettagam verify --rescan, to prove every file made it"
+    elif not verified.get("ok"):
+        nxt = "the last check found differences: run pettagam verify --rescan to see them"
+    else:
+        nxt = None
+    lines.append(f"Next:      {nxt}" if nxt else "All done:  every file is placed and was checked "
+                 f"{time.strftime('%Y-%m-%d', time.localtime(verified['at']))}. Browse it with pettagam panel.")
+    return "\n".join(lines)
+
+
+def confirm(question: str) -> bool:
+    """Ask yes or no on the terminal. With nobody to answer (a script), the answer is no, and says so."""
+    try:
+        return input(f"{question} [y/N] ").strip().lower() in ("y", "yes")
+    except EOFError:
+        print("\nNo answer (this isn't running in a terminal). Add --yes to go ahead without being asked.")
+        return False
+
+
 def main(argv=None) -> int:
-    p = argparse.ArgumentParser(prog="pettagam", description="Organize a messy file tree into a smart library.")
+    """Run a command. Problems a person can fix are explained in plain words instead of a traceback."""
+    from .errors import explain, is_bug, save_details
+    from .progress import Stopped
+    try:
+        return _main(argv)
+    except (KeyboardInterrupt, Stopped):
+        print("\nStopped. Finished work is kept: run the same command again to carry on.", file=sys.stderr)
+        return 130
+    except Exception as e:
+        print(f"Problem: {explain(e)}", file=sys.stderr)
+        if is_bug(e):
+            where = save_details(e, " ".join(sys.argv[1:] if argv is None else argv))
+            print("This looks like a bug in Pettagam." + (f" The details are in {where}; please include that file "
+                  "when you report it." if where else ""), file=sys.stderr)
+        return 1
+
+
+def _main(argv=None) -> int:
+    p = Parser(prog="pettagam", description="Organize a messy file tree into a smart library. The old files are never "
+               "changed.", formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--version", action="version", version=f"pettagam {__version__}")
     p.add_argument("--db", default=default_db(),
                    help="catalog file; keep it on an SSD (default: $PETTAGAM_DB, ./pettagam.db, or the panel's)")
-    sub = p.add_subparsers(dest="cmd", required=True)
+    sub = p.add_subparsers(dest="cmd", metavar="COMMAND", title="commands", help="one of the commands below")
+    summaries = {}
+    add_parser = sub.add_parser
+
+    def add(name, **kw):  # the summary becomes the command's own -h text; the main --help lists them in groups
+        summaries[name] = kw.pop("help")
+        return add_parser(name, description=summaries[name] + ".", **kw)
+
+    sub.add_parser = add
+
+    sub.add_parser("status", help="where the dry run and placing have got to, and what to do next")
+    up = sub.add_parser("update", help="update Pettagam from GitHub and restart the panel if it's open")
+    up.add_argument("--check", action="store_true", help="only say whether there is an update")
+    up.add_argument("--port", type=int, default=8484, help="the panel's port, to restart it (default 8484)")
 
     s = sub.add_parser("scan", help="read-only inventory of SOURCE")
     s.add_argument("source")
@@ -215,7 +346,13 @@ def main(argv=None) -> int:
     fx.add_argument("--library", help="default: the library in the catalog")
     fx.add_argument("--notify", action="store_true", help="show a desktop notification if damage is found")
 
+    p.epilog = _grouped(summaries)
     args = p.parse_args(argv)
+    if not args.cmd:
+        print(welcome(args.db))
+        return 0
+    if args.cmd == "update":
+        return _update(args)
     if args.db and os.path.dirname(os.path.abspath(args.db)):
         folder = os.path.dirname(os.path.abspath(args.db))
         if folder == os.path.join(os.path.expanduser("~"), ".pettagam"):
@@ -238,8 +375,12 @@ def main(argv=None) -> int:
               key=args.tls_key)
         return 0
     con = connect(args.db)
+    from .progress import Progress, keep_awake
+    long = args.cmd in LONG and not (args.cmd == "bench" and args.json)
+    args.say = Progress(print) if long else print
     try:
-        code = _run(con, args)
+        with keep_awake() if long else contextlib.nullcontext():
+            code = _run(con, args)
     except RuleError as e:
         print(f"Problem in your rules: {e}", file=sys.stderr)
         return 3
@@ -250,6 +391,46 @@ def main(argv=None) -> int:
         except (OSError, sqlite3.Error) as e:
             print(f"Note: could not save the catalog copy in the library: {e}", file=sys.stderr)
     return code
+
+
+def _update(args) -> int:
+    from . import update
+    res = update.check()
+    if res["error"] and not res["behind"]:
+        print(res["error"], file=sys.stderr)
+        return 1
+    if not res["behind"]:
+        print(f"Pettagam {__version__} is up to date.")
+        return 0
+    print(f"{res['behind']} new change{'s' * (res['behind'] != 1)} on GitHub:")
+    for c in res["changes"]:
+        print(f"  - {c}")
+    if args.check:
+        print("Update with: pettagam update")
+        return 0
+    done = update.update()
+    print(f"Updated to Pettagam {done['version']}.")
+    print(_restart_panel(args.port))
+    if done["setup_again"]:
+        print("The launchers changed too: double-click Setup Pettagam once so the app in Applications is updated.")
+    return 0
+
+
+def _restart_panel(port: int) -> str:
+    """Ask a panel running on this computer to restart with the new code."""
+    import urllib.error
+    import urllib.request
+    req = urllib.request.Request(f"http://127.0.0.1:{port}/api/restart", data=b"{}", method="POST",
+                                 headers={"Content-Type": "application/json", "Host": f"localhost:{port}"})
+    try:
+        with urllib.request.urlopen(req, timeout=5):
+            return "The panel is restarting with the new version; its page reloads by itself."
+    except urllib.error.HTTPError as e:
+        if e.code == 409:
+            return "The panel is busy with a step. When it finishes, press Restart now at the top of the panel."
+        return "Restart the panel to use the new version (close its window and open Pettagam again)."
+    except OSError:
+        return "Open Pettagam as usual: it uses the new version."
 
 
 def _library(con, args) -> str:
@@ -292,7 +473,7 @@ def _tags(con, args) -> int:
             tags, desc = con.execute(f"SELECT tags, description FROM {table} WHERE id=?", (fid,)).fetchone()
             print(f"{name}\n  tags: {(tags or '(none)').replace(',', ', ')}" + (f"\n  {desc}" if desc else ""))
         return 0
-    if len(items) > 1 and not args.yes and input(f"Change the tags of {len(items):,} files? [y/N] ").lower() != "y":
+    if len(items) > 1 and not args.yes and not confirm(f"Change the tags of {len(items):,} files?"):
         print("Cancelled.")
         return 1
     n = edit_tags(con, items, tags=split(args.set_tags) if args.set_tags is not None else None,
@@ -302,25 +483,45 @@ def _tags(con, args) -> int:
 
 
 def _run(con, args) -> int:
+    say = args.say
+    if args.cmd == "status":
+        print(status_text(con))
+        return 0
     if args.cmd in ("scan", "dryrun"):
-        scan(con, args.source, workers=args.workers)
+        scan(con, args.source, workers=args.workers, progress=say)
         if not getattr(args, "no_dupes", False):
-            find_duplicates(con, workers=args.workers)
+            find_duplicates(con, workers=args.workers, progress=say)
     if args.cmd in ("plan", "dryrun"):
         rules = load_rules(args.rules or default_path(args.library))
         if rules:
             print(f"Using {len(rules)} of your rules")
-        plan(con, args.library, split_at=args.split_at, rules=rules)
-        report(con, args.out)
+        plan(con, args.library, split_at=args.split_at, rules=rules, progress=say)
+        out = report(con, args.out, progress=say)
+        print(f"\nNext: look over {out} (and plan.csv beside it, or the panel's Organize tab).\n"
+              "When it looks right, place the files with: pettagam apply")
     if args.cmd == "apply":
         n = con.execute("SELECT COUNT(*) FROM files WHERE action='place' AND (status IS NULL OR status='error')").fetchone()[0]
-        if not args.yes and input(f"Place {n:,} files into the library? The source is not changed. [y/N] ").lower() != "y":
+        if not n:
+            if con.execute("SELECT 1 FROM files WHERE action='place' LIMIT 1").fetchone():
+                print("Every planned file is already in the library. To check them: pettagam verify --rescan")
+                return 0
+            print("Nothing is planned yet. Start with a dry run: pettagam dryrun OLD-FILES --library LIBRARY")
+            return 1
+        if not args.yes and not confirm(f"Place {n:,} files into the library? The old files are not changed."):
             print("Cancelled.")
             return 1
-        res = apply(con, workers=args.workers, method=args.method)
-        return 1 if res["errors"] else 0
+        res = apply(con, workers=args.workers, method=args.method, progress=say)
+        if res["errors"]:
+            print(f"{res['errors']:,} files could not be placed (see the lines above, or the panel). Fix what they "
+                  "say, then run pettagam apply again: it only retries those.")
+            return 1
+        print("Next: prove every file made it with: pettagam verify --rescan")
+        return 0
     if args.cmd == "verify":
-        res = verify(con, sample=-1 if args.full else args.sample, rescan=args.rescan)
+        if not con.execute("SELECT 1 FROM files LIMIT 1").fetchone():
+            print("Nothing to check yet: run a dry run and place the files first (pettagam status says where you are).")
+            return 1
+        res = verify(con, sample=-1 if args.full else args.sample, rescan=args.rescan, progress=say)
         for k, items in res["problems"].items():
             for item in items[:10]:
                 print(f"  {k}: {item}")
@@ -394,11 +595,11 @@ def _run(con, args) -> int:
         model = args.model or MODEL
         cost = est["usd"] * n / est["files"]
         note = f" (roughly ${cost:,.2f} on {MODEL})" if model == MODEL else ""
-        if not args.yes and input(f"Send {n:,} files to Claude ({model}) for tagging{note}? [y/N] ").lower() != "y":
+        if not args.yes and not confirm(f"Send {n:,} files to Claude ({model}) for tagging{note}?"):
             print("Cancelled.")
             return 1
         res = tag_library(con, _library(con, args), workers=args.workers, limit=args.limit,
-                          retag=args.retag, only=args.only, model=model)
+                          retag=args.retag, only=args.only, model=model, progress=say)
         return 1 if res["errors"] else 0
     if args.cmd == "tags":
         return _tags(con, args)
@@ -465,11 +666,11 @@ def _run(con, args) -> int:
         from .maintenance import undo
         if not args.dry_run and not args.yes:
             preview = undo(con, dry_run=True, progress=lambda m: None)
-            if input(f"Remove {preview['removed']:,} files from the library and return {preview['returned']:,} to "
-                     "the inbox? The old files are not touched. [y/N] ").lower() != "y":
+            if not confirm(f"Remove {preview['removed']:,} files from the library and return {preview['returned']:,} "
+                           "to the inbox? The old files are not touched."):
                 print("Cancelled.")
                 return 1
-        undo(con, dry_run=args.dry_run)
+        undo(con, dry_run=args.dry_run, progress=say)
         return 0
     if args.cmd == "find":
         from .library import search
@@ -543,7 +744,7 @@ def _run(con, args) -> int:
         return 1 if res["errors"] else 0
     if args.cmd == "fixity":
         from .fixity import check
-        res = check(con, args.library, minutes=args.minutes, limit=args.limit)
+        res = check(con, args.library, minutes=args.minutes, limit=args.limit, progress=say)
         if args.notify and res["damaged"]:
             from .notify import notify
             notify("Pettagam: damaged files", f"{len(res['damaged'])} library files changed without being edited. "

@@ -15,6 +15,15 @@ After the one-time cleanup it keeps the library tidy:
 - **AI tagging** (optional) gives photos and documents descriptive tags and a one-line description using Claude.
 - **The library explorer** in the panel lets you search and browse everything, with thumbnails.
 
+## Quick start on a Mac
+
+1. Install Python 3.13 or newer from [python.org](https://www.python.org/downloads/macos/) (one download, then the usual installer).
+2. Double-click **`Setup Pettagam.command`** in this folder. It puts a **Pettagam** app in your Applications folder.
+3. Open **Pettagam** from Launchpad or Spotlight. The panel opens in your browser.
+4. Follow the line at the top of the panel. It always says the one thing to do next: choose your folders, start the dry run (it changes nothing), look over the plan, place the files, and check they all made it.
+
+Long steps show how far they've got and roughly how long is left, can be stopped with **Stop**, and keep the Mac awake until they finish. You can close the browser tab meanwhile: a notification says when a long step is done. When a new version of Pettagam is out, the panel says so, and **Update and restart** installs it.
+
 ## Requirements
 
 - Python 3.13 or newer, and nothing else: Pettagam uses only what is built into Python.
@@ -56,7 +65,9 @@ Open the Pettagam app (or run `pettagam panel`, or double-click `launchers/Petta
 
 The **Explore library** tab shows every file in the library, newest first, with thumbnails. Search by any word in the name, folder, tags or description, filter by kind and year, or click a tag. Click a folder to look inside it (the trail above takes you back up), sort by date, name or size, and switch between the picture grid and a list. Tick files to add or remove tags on many at once. From the keyboard: `/` searches, the arrow keys move, Enter opens, `x` ticks. Click a file to see a preview, where it came from (and any identical copies in the old files), its date and tags, to edit its tags, and to open it. **On this day** shows what was taken on today's date in earlier years.
 
-The panel remembers your folders, shows live progress, and keeps its catalog in `~/.pettagam/` on your internal drive. To stop it, close the Terminal window that opened with it.
+The line at the top of the Organize tab always says what to do next. While a step runs, it shows how far it has got and roughly how long is left (the browser tab's title shows the percentage too, so you can watch from another tab), and **Stop** at the top stops it within a few seconds: placing and tagging keep what they finished and carry on from there next time, and a stopped dry run just needs starting again. A Mac doesn't go to sleep while a step runs, and a step that took more than a minute ends with a desktop notification, so you can close the tab and come back.
+
+The panel remembers your folders and keeps its catalog in `~/.pettagam/` on your internal drive. Opening Pettagam again while the panel is already running just brings up the running one. To stop it, close the Terminal window that opened with it.
 
 **On Ubuntu Server (no screen):** the safest way is an SSH tunnel. Run the panel normally on the server (`launchers/pettagam-panel.sh --no-browser`), then on your laptop run `ssh -L 8484:localhost:8484 you@server` and open <http://localhost:8484/>. Everything travels encrypted inside SSH. Alternatively, `--host 0.0.0.0` makes the panel reachable from your network: the link it prints carries a secret token, so only people with the link can use it, and adding `--tls` encrypts it:
 
@@ -67,6 +78,8 @@ launchers/pettagam-panel.sh --host 0.0.0.0 --no-browser --tls
 The first time, Pettagam makes a certificate for this computer (kept in `~/.pettagam/tls/`) and prints its SHA-256 fingerprint. Browsers don't know a home-made certificate, so they warn once: check that the fingerprint they show matches, then continue. If you have a certificate of your own (for example from your router or a reverse proxy), use `--tls-cert FILE --tls-key FILE` instead. Without `--tls` the connection is plain HTTP, and the panel says so.
 
 ## Use it from the command line
+
+`pettagam` on its own says how to start and where your catalog has got to; `pettagam status` says where you are and the one thing to do next, and `pettagam --help` lists every command, grouped in the order you'd use them. Long steps show the percentage and time left. Ctrl+C stops one; finished work is kept, so running the same command again carries on.
 
 Replace the paths with yours. On the Mac, the N300 Pro appears under `/Volumes/`. Put the library on the **same drive** as the old files so hardlinks can be used.
 
@@ -317,6 +330,34 @@ rsync -aH "/Volumes/N300/Pettagam/" you@server:/srv/ninaivu/Pettagam/
 ```
 
 If the old files go too, copy them in the same `rsync` run as the library (their common parent folder), or the hardlinks between them become separate copies. `relocate` spot-checks that files are where it now expects them. Then set up the background inbox again with `pettagam service on`.
+
+## Updating Pettagam
+
+When a new version is on GitHub, the panel shows **A new version of Pettagam is available**, with what changed. Press **Update and restart**: Pettagam downloads only its own files, restarts the panel and reloads the page. Your files, library, settings and catalog are not touched. Other ways to do the same:
+
+- double-click **`Update Pettagam.command`** in the Pettagam folder, or
+- run `pettagam update` (`pettagam update --check` only looks). It restarts a running panel for you.
+
+If you update another way (for example `git pull` or GitHub Desktop), the panel notices that its files changed and offers **Restart now**, so there's no need to find its Terminal window. If an update changes the launchers, Pettagam says so: then double-click **Setup Pettagam** once more so the app in Applications is updated too. Updating never overwrites a change you made to Pettagam's own files; it says so and leaves everything as it was.
+
+Updating works in a copy downloaded with git (GitHub Desktop, or `git clone`). A copy downloaded as a zip can't update itself: download the new zip instead.
+
+## When something goes wrong
+
+Pettagam explains problems in plain words, in the panel's Activity box or on the command line, and says what to do. The common ones:
+
+| You see | What to do |
+| --- | --- |
+| *Is the drive plugged in?* | The drive was unplugged or went to sleep. Plug it in and run the step again: placing carries on where it stopped. |
+| *Not allowed to read or change a file or folder* | macOS is protecting the folder. Open **System Settings → Privacy & Security → Files and Folders** (or **Full Disk Access**), allow **Terminal** and **Python**, and try again. The first time Pettagam reaches an external drive, macOS may ask: allow it. |
+| *The drive is full* | Free some space. The health check shows how much the library needs. |
+| *The catalog is busy* | Another Pettagam step (the panel, the background inbox job or another Terminal window) is using the catalog. Wait for it to finish. |
+| *Another program is using port 8484* | Something else uses the panel's address. Start it on another: `pettagam panel --port 8485`. |
+| *Pettagam needs Python 3.13 or newer* | Install it from [python.org](https://www.python.org/downloads/macos/) and double-click Setup Pettagam again. |
+| *Placement can't use hardlinks* (health check) | The library is on another drive than the old files, or the drive is exFAT. Placing still works, by copying, but needs as much free space again. |
+| *This looks like a bug in Pettagam* | The details are saved in `~/.pettagam/last-error.txt`. Please send that file with a description of what you were doing. |
+
+`pettagam doctor` (the panel's health check) checks the drives, hardlinks, free space and setup, and says what to do about each problem.
 
 ## Safety and privacy
 

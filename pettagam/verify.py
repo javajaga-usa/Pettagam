@@ -1,11 +1,13 @@
 """Sync checks: did every file make it, is every copy identical, has the source changed since the scan."""
 
+import json
 import os
 import random
+import time
 
-from .db import get_meta
+from .db import get_meta, set_meta
 from .hashing import hash_file
-from .scan import walk
+from .scan import PROGRESS_EVERY, walk
 
 
 def verify(con, sample: int = 200, rescan: bool = False, progress=print) -> dict:
@@ -30,7 +32,11 @@ def verify(con, sample: int = 200, rescan: bool = False, progress=print) -> dict
     placed = con.execute(
         "SELECT path, dest, method, size, mtime FROM files WHERE action='place' AND status='done'").fetchall()
     copies = []
-    for r in placed:
+    said = time.time()
+    for i, r in enumerate(placed, 1):
+        if time.time() - said >= PROGRESS_EVERY:
+            said = time.time()
+            progress(f"  checked {i:,} of {len(placed):,} placed files")
         src, dst = os.path.join(source, r["path"]), os.path.join(library, r["dest"])
         try:
             d = os.stat(dst)
@@ -50,7 +56,10 @@ def verify(con, sample: int = 200, rescan: bool = False, progress=print) -> dict
             else:
                 copies.append((src, dst, r["dest"]))
     n = len(copies) if sample < 0 else min(sample, len(copies))
-    for src, dst, rel in random.sample(copies, n):
+    for i, (src, dst, rel) in enumerate(random.sample(copies, n), 1):
+        if time.time() - said >= PROGRESS_EVERY:
+            said = time.time()
+            progress(f"  checksummed {i:,} of {n:,} copies")
         try:
             if hash_file(src) != hash_file(dst):
                 problems["mismatch"].append(rel)
@@ -65,6 +74,9 @@ def verify(con, sample: int = 200, rescan: bool = False, progress=print) -> dict
         seen = set()
         for rel, st in walk(source):
             seen.add(rel)
+            if time.time() - said >= PROGRESS_EVERY:
+                said = time.time()
+                progress(f"  looked at {len(seen):,} of about {len(known):,} old files for changes")
             if rel not in known:
                 problems["new"].append(rel)
             elif (st.st_size, int(st.st_mtime)) != (known[rel][0], int(known[rel][1])):
@@ -74,5 +86,6 @@ def verify(con, sample: int = 200, rescan: bool = False, progress=print) -> dict
                  f"{len(problems['deleted']):,} deleted since the scan")
 
     ok = not any(problems.values())
+    set_meta(con, "verified", json.dumps({"at": time.time(), "ok": ok}))
     progress("RESULT: everything is in sync." if ok else "RESULT: differences found (see report).")
     return {"ok": ok, "counts": counts, "total": total, "problems": problems}

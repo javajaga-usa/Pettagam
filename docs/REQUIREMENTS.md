@@ -4,8 +4,8 @@
 | --- | --- |
 | Document | Software requirements specification |
 | Product | Pettagam (பெட்டகம், "strongbox") |
-| Version | 1.6, covering Pettagam 0.6.3 |
-| Date | 2026-10-23 |
+| Version | 1.7, covering Pettagam 0.7.0 |
+| Date | 2026-10-24 |
 | Owner | Jagadeesh (javajaga-usa) |
 | Status | Baseline. Changes go through a pull request that updates this file, the code and the tests together. |
 
@@ -132,7 +132,7 @@ Each story lists the requirements that implement it (section 5 and 6). Acceptanc
 - Requirements: FR-MOVE-1..3, PLAT-1..6.
 
 **US-10. Use it without a Terminal.** As the owner, I want to double-click to install, open and remove Pettagam.
-- Requirements: FR-PANEL-1..7, FR-INSTALL-1..4, USE-1..4.
+- Requirements: FR-PANEL-1..7, FR-INSTALL-1..5, USE-1..4, USE-8..13.
 
 **US-11. Use it from another computer at home.** As the owner, I may run the panel on the Ubuntu server and open it from my laptop, without strangers being able to use it.
 - Requirements: SEC-1..9.
@@ -278,6 +278,7 @@ Each story lists the requirements that implement it (section 5 and 6). Acceptanc
 | FR-INSTALL-2 | `launchers/setup-ubuntu.sh` shall add a working `pettagam` command and a menu entry. | `launchers/setup-ubuntu.sh` | `test_launchers.py::test_ubuntu_setup_adds_a_working_command` |
 | FR-INSTALL-3 | `Uninstall Pettagam.command` shall remove the app, background job and `.venv`, ask before removing settings, and never touch the user's files. | `Uninstall Pettagam.command` | `test_launchers.py::test_setup_builds_the_app_and_uninstall_removes_it_but_never_files` |
 | FR-INSTALL-4 | `pip install .` shall install a `pettagam` command with the panel page included. | `pyproject.toml` | CI job `package` |
+| FR-INSTALL-5 | `Update Pettagam.command`, `pettagam update` and the panel's **Update and restart** shall bring a git copy of Pettagam up to date with `git pull --ff-only` (never merging, never overwriting an edit by hand, never asking for a password), list what changed, restart a running panel, and say when setup must be run again because the launchers changed. A copy that isn't a git checkout shall say how to update instead. | `update.py`, `panel.py`, `cli.py`, `Update Pettagam.command` | `test_friendly.py::test_update_pulls_the_new_version_and_never_overwrites_edits`, `test_launchers.py::test_update_launcher_explains_when_it_cannot_update` |
 
 ## 6. Non-functional requirements
 
@@ -347,7 +348,13 @@ Threat model: Pettagam runs as the owner on their own computer. The panel is a w
 | USE-3 | Installing and removing shall each be one double-click on the Mac. | `test_launchers.py::test_setup_builds_the_app_and_uninstall_removes_it_but_never_files` |
 | USE-4 | The panel should work on a phone-sized screen and be usable by keyboard. | Manual; keyboard and screen-reader use not yet audited (gap G-14) |
 | USE-6 | The panel should meet WCAG 2.2 AA for keyboard and screen-reader use: every control is a real button, link or labelled field (reachable with Tab, used with Enter or Space), focus is always visible, the tabs follow the ARIA tab pattern (arrow keys), status and results are announced (`aria-live`), dialogs are named, a skip link leads past the header, and text colours have at least 4.5:1 contrast in light and dark mode. | `test_panel.py::test_panel_controls_have_names_and_work_from_the_keyboard`, `test_panel.py::test_panel_text_colours_are_readable`; checked by hand in Chromium with the keyboard only |
-| USE-7 | Long steps shall say how far they got at least every 10 seconds (scan: files so far, speed and folders left; duplicate check: files sampled and hashed), and the panel's status line shall name the running step, how long it has run and its latest progress, say when the last step failed, and mark the numbers a running dry run is rebuilding. | `scan.py`, `hashing.py`, `panel.html` | `test_pipeline.py::test_long_steps_say_how_far_they_got` |
+| USE-7 | Long steps shall say how far they got at least every 10 seconds (scan: files so far, speed and folders left; duplicate check: files sampled and hashed; planning, placing, the sync check and the damage check: files done of the total), and the panel's status line shall name the running step, how long it has run and its latest progress, say when the last step failed, and mark the numbers a running dry run is rebuilding. | `pettagam/*.py`, `panel.html` | `test_pipeline.py::test_long_steps_say_how_far_they_got` |
+| USE-8 | When a step knows how much is left, it shall show the percentage done and roughly how long is left, on the command line, in the panel's next-step line with a progress bar, and in the browser tab's title. A scan of a folder scanned before shall expect as many files as last time. | `progress.py`, `scan.py`, `panel.html` | `test_friendly.py::test_progress_shows_percent_and_time_left`, `test_friendly.py::test_a_repeat_scan_knows_how_many_files_to_expect` |
+| USE-9 | A running step shall be stoppable (the panel's **Stop**, or Ctrl+C) within about 10 seconds, without losing finished work: placing and tagging record what they finished and do nothing more (no further API calls), and running the step again carries on. The log says what stopping left behind. On a Mac the computer shall not go to sleep while a step runs, and a step that ran longer than a minute shall end with a desktop notification. | `progress.py`, `apply.py`, `tag.py`, `panel.py` | `test_friendly.py::test_stopping_raises_at_the_next_line`, `test_friendly.py::test_a_stopped_placement_carries_on_next_time`, `test_friendly.py::test_panel_stop_button_stops_the_running_step` |
+| USE-10 | Problems the person can fix (drive unplugged, disk full, permission refused by macOS, catalog busy, drive failing) shall be explained in plain words with what to do, never as a traceback, on the command line and in the panel. Anything else shall be called a bug, with its details saved to `~/.pettagam/last-error.txt`. | `errors.py`, `cli.py`, `panel.py` | `test_friendly.py::test_errors_are_explained_in_plain_words`, `test_friendly.py::test_a_bug_is_reported_plainly_with_its_details_saved`, `test_friendly.py::test_ctrl_c_says_work_is_kept` |
+| USE-11 | The command line shall say what to do next: `pettagam` alone shows how to start and where the catalog has got to, `pettagam status` names the next step, each of dry run, apply and verify ends with the next step, `--help` lists the commands in groups in the order they're used, a mistyped command gets a suggestion, and apply and verify with nothing to do say so. A question with nobody to answer is a no, with a hint to use `--yes`. | `cli.py` | `test_friendly.py::test_every_command_is_in_a_help_group`, `test_friendly.py::test_start_screen_typos_and_next_steps` |
+| USE-12 | The panel's Organize tab shall open with one sentence saying what to do next (choose folders, dry run, review and place, place the rest, check, done). Opening Pettagam while the panel runs shall bring up the running panel instead of failing; a port used by another program shall be named with what to do. | `panel.py`, `panel.html` | `test_friendly.py::test_opening_the_panel_twice_finds_the_running_one`; checked by hand in Chromium |
+| USE-13 | The panel shall notice that its own files changed (after an update by any means) and offer **Restart now**, which restarts it in place and reloads the page; it shall look for a new version on GitHub at most hourly and offer **Update and restart** with the list of changes. Restarting and updating are refused while a step runs and from other computers. | `panel.py`, `update.py`, `panel.html` | `test_friendly.py::test_panel_offers_a_restart_after_its_files_change`, `test_friendly.py::test_update_pulls_the_new_version_and_never_overwrites_edits` |
 
 ### 6.6 Maintainability
 

@@ -145,7 +145,8 @@ if [ ! -d "$HERE/pettagam" ]; then
 fi
 open -a Terminal "$HERE/launchers/Pettagam.command"
 LAUNCHER
-chmod +x "$APP/Contents/MacOS/Pettagam" "$HERE/launchers/Pettagam.command" "$HERE/Uninstall Pettagam.command" 2>/dev/null || true
+chmod +x "$APP/Contents/MacOS/Pettagam" "$HERE/launchers/Pettagam.command" "$HERE/Uninstall Pettagam.command" \
+    "$HERE/Update Pettagam.command" 2>/dev/null || true
 
 ICON_WORK="$(mktemp -d)"
 if "$PYTHON" "$HERE/launchers/make_icon.py" "$ICON_WORK/Pettagam.iconset" 2>/dev/null \
@@ -165,6 +166,7 @@ ok "Pettagam is in $APPS_DIR"
 printf '\n  \033[1;32mSet up.\033[0m\n\n'
 note "Open Pettagam from Applications, Launchpad or Spotlight."
 note "It opens the panel in your browser; close its Terminal window to stop it."
+note "To get a new version later, press Update in the panel or double-click Update Pettagam."
 if [ "$(dialog "Pettagam is set up and is in your Applications folder.\n\nOpen it now?" "Later" "Open Pettagam")" = "Open Pettagam" ] && [ "$ASK" = 1 ]; then
     open "$APP"
     exit 0
